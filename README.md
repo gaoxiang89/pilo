@@ -1,3 +1,18 @@
+> [!WARNING]
+> **个人使用的非官方 fork / Unofficial fork for personal use**
+>
+> 这是 [@gaoxiang89](https://github.com/gaoxiang89) 个人使用的修改版，不面向其他用户。使用 Pilo 请前往官方原版：**[hsingjui/pilo](https://github.com/hsingjui/pilo)**。
+>
+> This is a modified build for [@gaoxiang89](https://github.com/gaoxiang89)'s personal use only and is not intended for other users. To use Pilo, please use the official version: **[hsingjui/pilo](https://github.com/hsingjui/pilo)**.
+>
+> 感谢原作者 [@hsingjui](https://github.com/hsingjui) 创建了 Pilo。Thanks to the original author [@hsingjui](https://github.com/hsingjui) for creating Pilo.
+>
+> 本 fork 相对原版的修改 / Modifications in this fork (Apache License 2.0)：
+>
+> - 新增 Factory Droid 运行时 / Added a Factory Droid runtime
+> - 自动升级源和签名密钥改为本仓库 / Updater source and signing key point to this repository
+> - 增加本说明 / Added this notice
+
 <p align="center">
   <img src="./assets/branding/icon.png" width="128" alt="Pilo application icon">
 </p>
@@ -19,11 +34,6 @@
 </p>
 
 Pilo is a desktop client for [Pi Coding Agent](https://pi.dev/), not a separate agent implementation. It presents connections, projects, and Pi sessions in an IDE-style workspace while leaving conversation state and agent behavior to Pi.
-
-> [!IMPORTANT]
-> This build is for personal use. To use Pilo, please use the official version: [hsingjui/pilo](https://github.com/hsingjui/pilo).
->
-> This repository is a fork of [hsingjui/pilo](https://github.com/hsingjui/pilo). Many thanks to the original author [@hsingjui](https://github.com/hsingjui) for creating Pilo.
 
 ## Highlights
 
