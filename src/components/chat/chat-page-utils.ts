@@ -1,3 +1,4 @@
+import type { AgentKind } from "@/lib/agent";
 import { createChatSessionClient } from "@/lib/api/chat-session-client";
 import type {
 	PiAgentState,
@@ -18,6 +19,8 @@ export type ChatSession = {
 	externalTurnOpen?: boolean;
 	initialModel?: PiModel;
 	initialThinkingLevel?: PiThinkingLevel;
+	/** 创建时选定。已打开的会话不能改。缺省按路径或 Pi 解析。 */
+	agent?: AgentKind;
 };
 
 export type ChatSessionRuntimeState = {

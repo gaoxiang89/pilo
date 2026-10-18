@@ -19,6 +19,8 @@ type UseRemoteChatCommandsOptions = {
 	rpcForSession: RemoteSessionRpc;
 	startDraft: (projectId?: string) => void;
 	setFatalError: (message: string | null) => void;
+	/** Droid 只保留 /new，其余斜杠命令按普通消息发送。 */
+	piCommands?: boolean;
 };
 
 export function useRemoteChatCommands({
@@ -33,6 +35,7 @@ export function useRemoteChatCommands({
 	rpcForSession,
 	startDraft,
 	setFatalError,
+	piCommands = true,
 }: UseRemoteChatCommandsOptions) {
 	const { t } = useTranslation();
 
@@ -46,6 +49,7 @@ export function useRemoteChatCommands({
 				startDraft(activeProjectId || undefined);
 				return true;
 			}
+			if (!piCommands) return false;
 			if (!client || !activeSessionKey) return false;
 			const targetSessionKey = activeSessionKey;
 			const isActiveSession = () =>
@@ -105,6 +109,7 @@ export function useRemoteChatCommands({
 			ensureDraftRuntime,
 			handleExpiredAuth,
 			loadExtensionCommandNames,
+			piCommands,
 			rpcForSession,
 			startDraft,
 			t,

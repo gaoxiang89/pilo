@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     process::Stdio,
     sync::{Arc, Mutex as StdMutex, Weak},
 };
@@ -16,8 +17,23 @@ use serde_json::{Value, json};
 use tokio::{
     io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     process::{Child, ChildStdin},
-    sync::Mutex,
+    sync::{Mutex, oneshot},
 };
+
+/// ACP session state for one Droid process. Pi sessions leave `PiProcess::factory` empty.
+pub(crate) struct FactoryRuntime {
+    pub(crate) models: Vec<Value>,
+    pub(crate) model_id: Option<String>,
+    pub(crate) pending: HashMap<String, oneshot::Sender<Result<(), String>>>,
+    pub(crate) session_id: String,
+    pub(crate) model_config_id: String,
+    pub(crate) protocol_version: i64,
+    /// `thought_level` config option (`reasoning_effort` in droid 0.244). Values stay in
+    /// Droid's spelling; the choices change with the model.
+    pub(crate) thinking_config_id: Option<String>,
+    pub(crate) thinking_values: Vec<String>,
+    pub(crate) thinking_value: Option<String>,
+}
 
 use crate::environment::{cached_toolchain, process_command, resolve_program};
 use crate::{PiOutputTasks, PiStarts, ServerState};
@@ -25,11 +41,16 @@ use crate::{PiOutputTasks, PiStarts, ServerState};
 pub(crate) struct PiProcess {
     pub(crate) child: Child,
     pub(crate) stdin: Arc<Mutex<ChildStdin>>,
+    pub(crate) factory: Option<Arc<StdMutex<FactoryRuntime>>>,
 }
 
 impl PiProcess {
     pub(crate) async fn stop(self) -> Result<std::process::ExitStatus, String> {
-        let Self { mut child, stdin } = self;
+        let Self {
+            mut child,
+            stdin,
+            factory: _,
+        } = self;
         // EOF lets Pi run session_shutdown hooks before any force-kill fallback.
         drop(stdin);
         if let Ok(Ok(status)) =
@@ -83,7 +104,7 @@ async fn abort_output_tasks(tasks: [tokio::task::JoinHandle<()>; 2]) {
     }
 }
 
-async fn stop_registered_pi(
+pub(crate) async fn stop_registered_pi(
     processes: &Mutex<std::collections::HashMap<String, PiProcess>>,
     starts: &Mutex<PiStarts>,
     stops: &Mutex<tokio::task::JoinSet<()>>,
@@ -140,7 +161,7 @@ async fn stop_registered_pi(
         .map_err(|_| "Pi stop task ended unexpectedly".to_owned())?
 }
 
-async fn read_rpc_line<R: AsyncBufRead + Unpin>(
+pub(crate) async fn read_rpc_line<R: AsyncBufRead + Unpin>(
     reader: &mut R,
 ) -> std::io::Result<Option<Vec<u8>>> {
     let mut line = Vec::new();
@@ -504,7 +525,14 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
         }),
     );
     let stdin_identity = Arc::downgrade(&stdin);
-    processes.insert(params.stream_id.clone(), PiProcess { child, stdin });
+    processes.insert(
+        params.stream_id.clone(),
+        PiProcess {
+            child,
+            stdin,
+            factory: None,
+        },
+    );
 
     let stream_id = params.stream_id.clone();
     let writer = state.writer.clone();

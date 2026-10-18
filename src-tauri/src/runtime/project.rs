@@ -16,6 +16,26 @@ use super::{
 
 const MAX_DISCOVERED_PROJECTS: usize = 200;
 
+/// Droid model catalog read in the project's environment (Local/WSL/SSH).
+/// Returns `{ models, model }` in the Pi model shape. `thinking` also reads
+/// every model's thinking levels, which takes much longer.
+pub(crate) async fn droid_models(
+    servers: &ServerManager,
+    project: &Project,
+    thinking: bool,
+) -> Result<Value, String> {
+    servers
+        .request(
+            &project.connection,
+            "droid.models",
+            serde_json::json!({
+                "droidExecutable": project.connection.droid_executable,
+                "thinking": thinking,
+            }),
+        )
+        .await
+}
+
 pub(crate) fn load_model_scope(
     app: &AppHandle,
     project_id: &str,

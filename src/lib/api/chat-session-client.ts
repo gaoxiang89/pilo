@@ -1,3 +1,4 @@
+import type { AgentKind } from "@/lib/agent";
 import type { CacheKeepAliveStatus } from "@/lib/cache-keep-alive";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -31,6 +32,7 @@ export type ChatSessionClientOptions = {
 	/** Inline Pi extension sources loaded via --extension for this process only. */
 	extensions?: string[];
 	builtinExtensions?: { id: "model-catalog" }[];
+	agent?: AgentKind;
 };
 
 function traceChatClient(
@@ -126,6 +128,7 @@ function createRegisteredChatSessionClient(
 				noSession,
 				extensions: options.extensions,
 				builtinExtensions: options.builtinExtensions,
+				agent: options.agent,
 			}).finally(() => {
 				pendingPrepare = undefined;
 			});
@@ -145,6 +148,7 @@ function createRegisteredChatSessionClient(
 				noSession,
 				extensions: options.extensions,
 				builtinExtensions: options.builtinExtensions,
+				agent: options.agent,
 			}).finally(() => {
 				pendingEnsure = undefined;
 			});

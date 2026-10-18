@@ -20,6 +20,7 @@ import {
 	type ProjectPiModels,
 } from "@/lib/api/pi-models";
 import { createRemoteModelProbe } from "./remote-model-probe";
+import type { DroidModelCatalog } from "@/lib/droid-models";
 import type {
 	ProjectModelScope,
 	ProjectScopedModel,
@@ -48,6 +49,7 @@ import {
 	uploadRemoteChatFile,
 	loadRemoteExternalActivity,
 	loadRemoteModels,
+	loadRemoteDroidModels,
 	saveRemoteModels,
 	loadRemoteCacheKeepAliveSettings,
 	saveRemoteCacheKeepAliveSettings,
@@ -235,6 +237,13 @@ export class WebPiloClient implements PiloClient {
 		};
 		void request.then(clear, clear);
 		return request;
+	}
+
+	loadDroidModels(
+		projectId: string,
+		thinking = false,
+	): Promise<DroidModelCatalog> {
+		return loadRemoteDroidModels(this.token, projectId, thinking);
 	}
 
 	loadModelScope(projectId: string): Promise<ProjectModelScope> {

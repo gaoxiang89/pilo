@@ -1,5 +1,7 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use super::AgentKind;
+
 mod u64_string {
     use super::*;
 
@@ -49,6 +51,9 @@ pub struct SessionIndexEntry {
     pub indexed_at_ms: u64,
     pub pinned: bool,
     pub title_override: Option<String>,
+    /// 创建该会话的代理。旧索引缺省为 Pi。
+    #[serde(default)]
+    pub agent: AgentKind,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -80,6 +85,7 @@ pub struct SessionReconcileResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::AgentKind;
 
     fn session(file_mtime_ns: u64) -> SessionIndexEntry {
         SessionIndexEntry {
@@ -100,6 +106,7 @@ mod tests {
             indexed_at_ms: 0,
             pinned: false,
             title_override: None,
+            agent: AgentKind::Pi,
         }
     }
 

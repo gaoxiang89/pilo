@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import type { AgentKind } from "@/lib/agent";
+
 export type SidebarEnv = { id: string; name: string };
 
 /** 侧栏组织模式：按连接分组的“项目”树，或平铺的“最近会话”会话列表。 */
@@ -26,6 +28,7 @@ export type SidebarSession = {
 	unread?: boolean;
 	/** 进入运行状态的时刻；运行中的会话用它在组内保持稳定排序，避免随消息流来回跳动。 */
 	runningSince?: Date;
+	agent?: AgentKind;
 };
 
 export type AppSidebarProps = {

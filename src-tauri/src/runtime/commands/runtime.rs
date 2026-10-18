@@ -139,6 +139,7 @@ pub async fn chat_session_prepare(
     no_session: bool,
     extensions: Option<Vec<String>>,
     builtin_extensions: Option<Vec<pilo_protocol::BuiltinExtension>>,
+    agent: Option<crate::domain::AgentKind>,
 ) -> Result<PiSessionSnapshot, String> {
     chat_service::prepare(
         &HostPaths::from_app(&app)?,
@@ -151,6 +152,7 @@ pub async fn chat_session_prepare(
             no_session,
             extensions: extensions.unwrap_or_default(),
             builtin_extensions: builtin_extensions.unwrap_or_default(),
+            agent: agent.unwrap_or(crate::domain::AgentKind::Pi),
         },
     )
     .await
@@ -169,6 +171,7 @@ pub async fn chat_session_start(
     no_session: bool,
     extensions: Option<Vec<String>>,
     builtin_extensions: Option<Vec<pilo_protocol::BuiltinExtension>>,
+    agent: Option<crate::domain::AgentKind>,
 ) -> Result<PiSessionSnapshot, String> {
     chat_service::start(
         &HostPaths::from_app(&app)?,
@@ -181,6 +184,7 @@ pub async fn chat_session_start(
             no_session,
             extensions: extensions.unwrap_or_default(),
             builtin_extensions: builtin_extensions.unwrap_or_default(),
+            agent: agent.unwrap_or(crate::domain::AgentKind::Pi),
         },
     )
     .await

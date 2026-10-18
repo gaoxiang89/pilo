@@ -20,6 +20,8 @@ export type UseChatComposerSubmissionOptions = {
 	clearDraft: () => void;
 	clearImages: () => void;
 	onNewChat?: () => void;
+	/** Droid 会话只保留 /new，其余斜杠命令按普通消息发送。 */
+	piCommands?: boolean;
 	compact: (customInstructions?: string) => unknown;
 	tryExecuteExtensionCommand: (command: string) => Promise<boolean | null>;
 	handleSubmit: (submission: ChatSubmission) => void;
@@ -36,6 +38,7 @@ export function useChatComposerSubmission({
 	clearDraft,
 	clearImages,
 	onNewChat,
+	piCommands = true,
 	compact,
 	tryExecuteExtensionCommand,
 	handleSubmit,
@@ -68,6 +71,7 @@ export function useChatComposerSubmission({
 				onNewChat?.();
 				return true;
 			}
+			if (!piCommands) return false;
 			if (externalRunning) {
 				toast.info(t("chat.externalReadOnly"));
 				return true;
@@ -96,6 +100,7 @@ export function useChatComposerSubmission({
 		[
 			clearDraft,
 			clearImages,
+			piCommands,
 			compact,
 			onNewChat,
 			running,

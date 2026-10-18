@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
+import type { AgentKind } from "@/lib/agent";
 import type { ConversationEvent } from "@/lib/chat/conversation-types";
 import type { PiModel } from "@/lib/api/pi-runtime";
 
@@ -30,6 +31,8 @@ export type SessionIndexEntry = {
 	indexedAtMs: number;
 	pinned: boolean;
 	titleOverride: string | null;
+	/** 创建该会话的代理。旧索引缺省为 Pi；Factory 路径仍会被识别为 Droid。 */
+	agent?: AgentKind;
 };
 
 export type SessionUiStateUpdate = {

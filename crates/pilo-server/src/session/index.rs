@@ -13,7 +13,10 @@ use pilo_protocol::SessionFile;
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::{agent_dir, session_dir_key};
+use super::{
+    agent_dir, droid_session_dir_key, factory_sessions_dir, is_factory_session_path,
+    session_dir_key,
+};
 use crate::to_value;
 
 #[cfg(test)]
@@ -68,33 +71,51 @@ pub(crate) fn session_scan(params: SessionScanParams) -> Result<Value, String> {
         .into_iter()
         .map(|file| (file.path, (file.size, file.mtime_ns, file.recover_name)))
         .collect::<HashMap<_, _>>();
-    let Some(root) =
-        agent_dir().map(|root| root.join("sessions").join(session_dir_key(&params.project)))
-    else {
-        return to_value(Vec::<SessionFile>::new());
-    };
+    let roots = [
+        agent_dir().map(|root| root.join("sessions").join(session_dir_key(&params.project))),
+        factory_sessions_dir().map(|root| root.join(droid_session_dir_key(&params.project))),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
 
     let explicit_paths = !params.paths.is_empty();
     let mut paths = if !explicit_paths {
-        let entries = match std::fs::read_dir(&root) {
-            Ok(entries) => entries.collect::<Result<Vec<_>, _>>(),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return to_value(Vec::<SessionFile>::new());
+        let mut collected = Vec::new();
+        let mut saw_directory = false;
+        for root in &roots {
+            match std::fs::read_dir(root) {
+                Ok(entries) => {
+                    saw_directory = true;
+                    collected.extend(
+                        entries
+                            .collect::<Result<Vec<_>, _>>()
+                            .map_err(|error| format!("failed to list session directory: {error}"))?
+                            .into_iter()
+                            .map(|entry| entry.path())
+                            .filter(|path| {
+                                path.extension().and_then(|value| value.to_str()) == Some("jsonl")
+                            }),
+                    );
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(format!("failed to scan session directory: {error}")),
             }
-            Err(error) => return Err(format!("failed to scan session directory: {error}")),
         }
-        .map_err(|error| format!("failed to list session directory: {error}"))?;
-        entries
-            .into_iter()
-            .map(|entry| entry.path())
-            .filter(|path| path.extension().and_then(|value| value.to_str()) == Some("jsonl"))
-            .collect::<Vec<_>>()
+        if !saw_directory {
+            return to_value(Vec::<SessionFile>::new());
+        }
+        collected
     } else {
         params
             .paths
             .into_iter()
             .map(PathBuf::from)
-            .filter(|path| path.parent() == Some(root.as_path()))
+            .filter(|path| {
+                roots
+                    .iter()
+                    .any(|root| path.parent() == Some(root.as_path()))
+            })
             .filter(|path| path.extension().and_then(|value| value.to_str()) == Some("jsonl"))
             .collect::<Vec<_>>()
     };
@@ -392,6 +413,11 @@ fn read_session_summary_from<R: Read + Seek>(
             if value.get("type").and_then(Value::as_str) == Some("session") {
                 break value;
             }
+            if is_factory_session_path(&candidate.path_text)
+                && let Some(header) = normalize_droid_header(&value, project)
+            {
+                break header;
+            }
             let pi_message = value.get("type").and_then(Value::as_str) == Some("message")
                 && value
                     .get("id")
@@ -506,6 +532,14 @@ fn read_session_summary_from<R: Read + Seek>(
             );
         }
     }
+    let name = summary.name.or_else(|| {
+        header
+            .get("title")
+            .or_else(|| header.get("name"))
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+            .filter(|name| !name.trim().is_empty())
+    });
     Ok(Some(SessionFile {
         path: candidate.path_text.clone(),
         size: candidate.size,
@@ -513,9 +547,44 @@ fn read_session_summary_from<R: Read + Seek>(
         header,
         unchanged: false,
         deferred: false,
-        name: summary.name,
+        name,
         first_user_message_preview: summary.first_user_message_preview,
     }))
+}
+
+fn normalize_droid_header(value: &Value, project: &str) -> Option<Value> {
+    let kind = value.get("type").and_then(Value::as_str);
+    if matches!(
+        kind,
+        Some(
+            "message" | "tool_call" | "tool_result" | "completion" | "error" | "user" | "assistant"
+        )
+    ) {
+        return None;
+    }
+    let id = value
+        .get("sessionId")
+        .or_else(|| value.get("id"))
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty())?;
+    if kind.is_none() && value.get("cwd").is_none() && value.get("sessionId").is_none() {
+        return None;
+    }
+    let mut header = serde_json::json!({
+        "type": "session",
+        "id": id,
+        "timestamp": value.get("timestamp").and_then(Value::as_str).unwrap_or(""),
+        "cwd": value.get("cwd").cloned().unwrap_or_else(|| Value::String(project.to_owned())),
+    });
+    if let Some(title) = value
+        .get("title")
+        .or_else(|| value.get("name"))
+        .and_then(Value::as_str)
+        .filter(|title| !title.trim().is_empty())
+    {
+        header["title"] = Value::String(title.to_owned());
+    }
+    Some(header)
 }
 
 fn read_name_scan_boundary<R: Read + Seek>(reader: &mut R, size: u64) -> Result<Vec<u8>, String> {

@@ -59,6 +59,14 @@ Pilo is currently built from source. Development requires Node.js 22, pnpm (CI u
 
 Pilo discovers `pi` from `PATH` by default. Each connection can also be configured with a custom Pi executable path in Settings.
 
+## Factory Droid
+
+A new session can run [Factory Droid](https://docs.factory.ai/) instead of Pi. The connection remembers the default; the session keeps the agent it was created with.
+
+Droid runs through the same Local, WSL, and SSH server as Pi, in the environment where the project lives. Install and log in to `droid` there (or set `FACTORY_API_KEY` in that environment). Pilo does not store the key. Session history is read from `~/.factory/sessions`; SQLite only indexes those files.
+
+This first version is a conversation loop: replies and tool calls, with Droid's own default model and medium autonomy. Pi extensions, slash commands, model selection, and permission prompts stay on Pi sessions.
+
 ### Windows
 
 ```powershell

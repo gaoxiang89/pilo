@@ -91,6 +91,8 @@ pub async fn wsl_connection_test(
             distro: distro.to_owned(),
         },
         shown_in_home: false,
+        default_agent: crate::domain::AgentKind::Pi,
+        droid_executable: None,
     };
     connection_test_result(runtime.servers.test_connection(&connection).await?)
 }

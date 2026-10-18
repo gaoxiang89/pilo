@@ -305,9 +305,24 @@ fn build_index_entry(
     let pi_session_id = file
         .header
         .get("id")
+        .or_else(|| file.header.get("sessionId"))
         .and_then(Value::as_str)
-        .ok_or_else(|| format!("session '{}' has no id", file.path))?
-        .to_owned();
+        .filter(|id| !id.is_empty())
+        .map(str::to_owned)
+        .or_else(|| {
+            crate::domain::AgentKind::from_session_path(&file.path)
+                .eq(&crate::domain::AgentKind::Droid)
+                .then(|| {
+                    std::path::Path::new(&file.path)
+                        .file_stem()
+                        .and_then(|stem| stem.to_str())
+                        .filter(|stem| !stem.is_empty())
+                        .map(str::to_owned)
+                })
+                .flatten()
+        })
+        .ok_or_else(|| format!("session '{}' has no id", file.path))?;
+    let agent = crate::domain::AgentKind::from_session_path(&file.path);
     // Local-Pi SSH sessions are stored under a local anchor directory, but
     // the indexed workspace identity remains the authoritative remote cwd.
     let cwd = project.path.clone();
@@ -344,6 +359,7 @@ fn build_index_entry(
         indexed_at_ms: storage::now_ms(),
         pinned: previous.is_some_and(|value| value.pinned),
         title_override: previous.and_then(|value| value.title_override.clone()),
+        agent,
     })
 }
 
@@ -364,6 +380,8 @@ mod tests {
                 pi_runtime: crate::domain::PiRuntime::default(),
                 kind: ConnectionKind::Local,
                 shown_in_home: true,
+                default_agent: crate::domain::AgentKind::Pi,
+                droid_executable: None,
             },
             metadata: ProjectMetadata {
                 cwd: "/work".to_owned(),
@@ -431,6 +449,7 @@ mod tests {
             indexed_at_ms: 1,
             pinned: true,
             title_override: None,
+            agent: crate::domain::AgentKind::Pi,
         };
         let entry = build_index_entry(
             &project,

@@ -68,6 +68,8 @@ export function ChatModelPicker({
 		if (editing || wasEditingRef.current) searchRef.current?.focus();
 		wasEditingRef.current = editing;
 	}, [editing]);
+	const scopePicker = modelScope != null;
+	const catalogView = !scopePicker || view === "all";
 	const scopeReady = Boolean(
 		modelScope?.scope && modelScope.catalogReady && !modelScope.error,
 	);
@@ -77,7 +79,7 @@ export function ChatModelPicker({
 	const listMaxHeight = compact
 		? "max-h-[min(14rem,calc(var(--remote-viewport-height,100dvh)*0.35))]"
 		: "max-h-[min(16rem,calc(var(--remote-viewport-height,100dvh)*0.35))]";
-	const showModels = editing || view === "all" || scopeReady;
+	const showModels = editing || catalogView || scopeReady;
 	const search = query.trim().toLowerCase();
 	const matches = (provider: string, id: string, name = "") =>
 		[name, id, provider].some((value) => value.toLowerCase().includes(search));
@@ -85,7 +87,7 @@ export function ChatModelPicker({
 	const visibleModels = (
 		editing
 			? availableModels
-			: view === "all"
+			: catalogView
 				? models
 				: (modelScope?.models ?? [])
 	).filter((model) => matches(model.provider, model.id, model.name));
@@ -250,7 +252,7 @@ export function ChatModelPicker({
 							{t("chat.scopeSelectedCount", { count: draft.models.length })}
 						</output>
 					</div>
-				) : (
+				) : scopePicker ? (
 					<div
 						className={cn(
 							"flex min-w-0 gap-0.5 p-0.5",
@@ -282,6 +284,8 @@ export function ChatModelPicker({
 							</Button>
 						))}
 					</div>
+				) : (
+					<div className="min-w-0 flex-1" />
 				)}
 				<div className="ms-auto shrink-0">
 					<Button

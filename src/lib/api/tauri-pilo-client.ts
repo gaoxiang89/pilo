@@ -22,7 +22,8 @@ import {
 	type PiloClientHistoryOptions,
 	type PiloClientStartChatInput,
 } from "@/lib/api/pilo-client";
-import { listProjects } from "@/lib/api/projects";
+import { listProjects, loadProjectDroidModels } from "@/lib/api/projects";
+import type { DroidModelCatalog } from "@/lib/droid-models";
 import type { SessionReadState } from "@/lib/session-read-state";
 import { readProjectImage } from "@/lib/api/files";
 import type {
@@ -151,6 +152,13 @@ export class TauriPiloClient implements PiloClient {
 	async loadModels(projectId: string): Promise<ProjectPiModels | null> {
 		await hydrateProjectPiModels();
 		return getCachedProjectPiModels(projectId);
+	}
+
+	loadDroidModels(
+		projectId: string,
+		thinking = false,
+	): Promise<DroidModelCatalog> {
+		return loadProjectDroidModels(projectId, thinking);
 	}
 
 	loadModelScope(projectId: string): Promise<ProjectModelScope> {

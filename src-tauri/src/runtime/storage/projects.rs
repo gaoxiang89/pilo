@@ -3,8 +3,8 @@ use std::collections::HashSet;
 use rusqlite::{Connection as SqliteConnection, OptionalExtension, params};
 
 use crate::domain::{
-    Connection, PiRuntime, Project, ProjectMetadata, ProjectModelCache, ProjectModelScope,
-    ProjectScopedModel,
+    AgentKind, Connection, PiRuntime, Project, ProjectMetadata, ProjectModelCache,
+    ProjectModelScope, ProjectScopedModel,
 };
 
 pub fn upsert_project(db: &SqliteConnection, project: &Project) -> Result<(), String> {
@@ -50,13 +50,15 @@ fn project_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {
             pi_runtime,
             kind,
             shown_in_home: row.get::<_, i64>(11)? != 0,
+            default_agent: AgentKind::parse(&row.get::<_, String>(12)?).unwrap_or(AgentKind::Pi),
+            droid_executable: row.get(13)?,
         },
     })
 }
 
 pub fn list_projects(db: &SqliteConnection) -> Result<Vec<Project>, String> {
     let mut statement = db.prepare(
-        "SELECT p.id,p.name,p.path,p.metadata_json,p.created_at_ms,p.last_opened_at_ms,c.id,c.name,c.kind_json,c.pi_executable,c.pi_runtime,c.shown_in_home
+        "SELECT p.id,p.name,p.path,p.metadata_json,p.created_at_ms,p.last_opened_at_ms,c.id,c.name,c.kind_json,c.pi_executable,c.pi_runtime,c.shown_in_home,c.default_agent,c.droid_executable
          FROM projects p JOIN connections c ON c.id=p.connection_id
          ORDER BY p.connection_id ASC,p.sort_order ASC,p.name ASC"
     ).map_err(|error| error.to_string())?;
@@ -108,7 +110,7 @@ pub fn reorder_projects(
 
 pub fn get_project(db: &SqliteConnection, id: &str) -> Result<Option<Project>, String> {
     db.query_row(
-        "SELECT p.id,p.name,p.path,p.metadata_json,p.created_at_ms,p.last_opened_at_ms,c.id,c.name,c.kind_json,c.pi_executable,c.pi_runtime,c.shown_in_home
+        "SELECT p.id,p.name,p.path,p.metadata_json,p.created_at_ms,p.last_opened_at_ms,c.id,c.name,c.kind_json,c.pi_executable,c.pi_runtime,c.shown_in_home,c.default_agent,c.droid_executable
          FROM projects p JOIN connections c ON c.id=p.connection_id WHERE p.id=?1",
         params![id],
         project_from_row,

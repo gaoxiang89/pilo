@@ -154,6 +154,8 @@ mod tests {
                 pi_runtime: PiRuntime::Workspace,
                 kind,
                 shown_in_home: true,
+                default_agent: crate::domain::AgentKind::Pi,
+                droid_executable: None,
             },
             metadata: ProjectMetadata {
                 cwd: path.to_owned(),

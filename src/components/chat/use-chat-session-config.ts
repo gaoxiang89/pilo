@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
+import { resolveSessionAgent } from "@/lib/agent";
 import { createChatSessionClient } from "@/lib/api/chat-session-client";
+import { readDroidModelCache, rememberDroidModels } from "@/lib/droid-models";
 import {
 	getCachedProjectPiModels,
 	hydrateProjectPiModels,
@@ -44,6 +46,7 @@ export function useChatSessionConfig({
 	client,
 }: UseChatSessionConfigOptions) {
 	const { t } = useTranslation();
+	const droid = resolveSessionAgent(session) === "droid";
 	const scopeConfig = useProjectModelScope(
 		tauriPiloClient,
 		session.projectRecord.id,
@@ -103,6 +106,21 @@ export function useChatSessionConfig({
 		modelRequestRef.current += 1;
 		modelSelectionDirtyRef.current = false;
 		thinkingSelectionDirtyRef.current = false;
+		if (droid) {
+			const cached = readDroidModelCache(session.projectRecord.connection.id);
+			setModelCatalog(null);
+			setModelOptions(cached.models);
+			const model = session.initialModel ?? cached.current;
+			setSelectedModel(model);
+			setModelLoadState(cached.models.length > 0 ? "ready" : "idle");
+			setModelError(null);
+			setModelChanging(false);
+			setThinkingLevels([...getPiModelThinkingLevels(model)]);
+			setSelectedThinkingLevel(
+				session.initialThinkingLevel ?? model?.defaultThinkingLevel ?? "off",
+			);
+			return;
+		}
 		const cached = getCachedProjectPiModels(session.projectRecord.id);
 		const initialModel =
 			session.initialModel ??
@@ -119,15 +137,18 @@ export function useChatSessionConfig({
 				(session.sessionPath ? "off" : (cached?.defaultThinkingLevel ?? "off")),
 		);
 	}, [
+		droid,
 		session.id,
 		session.initialModel,
 		session.initialThinkingLevel,
+		session.projectRecord.connection.id,
 		session.projectRecord.id,
 		session.sessionPath,
 	]);
 	/* oxlint-enable react/set-state-in-effect, react/exhaustive-effect-dependencies */
 
 	useEffect(() => {
+		if (droid) return;
 		const projectId = session.projectRecord.id;
 		let disposed = false;
 		const unsubscribe = subscribeProjectPiModels(projectId, (snapshot) => {
@@ -183,6 +204,7 @@ export function useChatSessionConfig({
 			unsubscribe();
 		};
 	}, [
+		droid,
 		session.initialModel,
 		session.initialThinkingLevel,
 		session.projectRecord.id,
@@ -191,12 +213,12 @@ export function useChatSessionConfig({
 
 	/* oxlint-disable react/set-state-in-effect -- Cached model profiles can arrive after history metadata; enrich the selected historical model without starting Pi. */
 	useEffect(() => {
-		if (!session.sessionPath || !selectedModel) return;
+		if (droid || !session.sessionPath || !selectedModel) return;
 		const profiledModel = findMatchingPiModel(modelOptions, selectedModel);
 		if (!profiledModel) return;
 		if (profiledModel !== selectedModel) setSelectedModel(profiledModel);
 		setThinkingLevels([...getPiModelThinkingLevels(profiledModel)]);
-	}, [modelOptions, selectedModel, session.sessionPath]);
+	}, [droid, modelOptions, selectedModel, session.sessionPath]);
 	/* oxlint-enable react/set-state-in-effect */
 
 	const {
@@ -220,7 +242,9 @@ export function useChatSessionConfig({
 		handleThinkingChange,
 	} = useChatThinkingControls({
 		client,
-		sessionPath: session.sessionPath,
+		// Droid applies thinking live, like its model; only Pi defers it to the
+		// next prompt for a session that has a file.
+		sessionPath: droid ? undefined : session.sessionPath,
 		selectedModel,
 		selectedThinkingLevel,
 		thinkingLevels,
@@ -242,6 +266,36 @@ export function useChatSessionConfig({
 	const loadModelOptions = useCallback(
 		async (force = false) => {
 			if (modelLoadState === "loading" || modelChanging) return;
+			if (droid) {
+				const requestId = ++modelRequestRef.current;
+				setModelLoadState("loading");
+				setModelError(null);
+				try {
+					await client.ensure();
+					const [listed, state] = await Promise.all([
+						client.getAvailablePiModels(),
+						client.getPiAgentState(),
+					]);
+					if (modelRequestRef.current !== requestId) return;
+					setModelOptions(listed.models);
+					rememberDroidModels(
+						session.projectRecord.connection.id,
+						listed.models,
+						state.model,
+					);
+					if (!modelSelectionDirtyRef.current) setSelectedModel(state.model);
+					// Droid's live levels belong to the model the process has selected.
+					setThinkingLevels([...getPiModelThinkingLevels(state.model)]);
+					if (!thinkingSelectionDirtyRef.current)
+						setSelectedThinkingLevel(state.thinkingLevel);
+					setModelLoadState("ready");
+				} catch (error) {
+					if (modelRequestRef.current !== requestId) return;
+					setModelError(runtimeErrorMessage(error));
+					setModelLoadState("error");
+				}
+				return;
+			}
 			const projectId = session.projectRecord.id;
 			const cached =
 				getCachedProjectPiModels(projectId) ??
@@ -330,12 +384,15 @@ export function useChatSessionConfig({
 			}
 		},
 		[
+			client,
+			droid,
 			modelCatalog,
 			modelChanging,
 			modelLoadState,
 			selectedModel,
 			session.initialModel,
 			session.initialThinkingLevel,
+			session.projectRecord.connection.id,
 			session.projectRecord.id,
 			session.sessionPath,
 		],
@@ -346,6 +403,41 @@ export function useChatSessionConfig({
 			if (!model || modelChanging) return;
 			modelSelectionDirtyRef.current = true;
 			thinkingSelectionDirtyRef.current = false;
+			if (droid) {
+				const previousModel = selectedModel;
+				const requestId = ++modelRequestRef.current;
+				setSelectedModel(model);
+				setModelChanging(true);
+				setModelError(null);
+				void (async () => {
+					try {
+						await client.ensure();
+						const applied = await client.setPiModel(model);
+						const state = await client.getPiAgentState();
+						if (modelRequestRef.current !== requestId) return;
+						const next = state.model ?? applied;
+						setSelectedModel(next);
+						rememberDroidModels(
+							session.projectRecord.connection.id,
+							modelOptions,
+							next,
+						);
+						// A model switch replaces Droid's thinking choices and level.
+						setThinkingLevels([...getPiModelThinkingLevels(next)]);
+						setSelectedThinkingLevel(state.thinkingLevel);
+						setModelLoadState("ready");
+					} catch (error) {
+						if (modelRequestRef.current !== requestId) return;
+						setSelectedModel(previousModel);
+						toast.error(t("chat.modelSwitchFailed"), {
+							description: runtimeErrorMessage(error),
+						});
+					} finally {
+						if (modelRequestRef.current === requestId) setModelChanging(false);
+					}
+				})();
+				return;
+			}
 			if (session.sessionPath) {
 				setSelectedModel(model);
 				setThinkingLevels([...getPiModelThinkingLevels(model)]);
@@ -387,9 +479,12 @@ export function useChatSessionConfig({
 		},
 		[
 			client,
+			droid,
 			modelChanging,
+			modelOptions,
 			selectedModel,
 			selectedThinkingLevel,
+			session.projectRecord.connection.id,
 			session.sessionPath,
 			t,
 		],
@@ -409,6 +504,7 @@ export function useChatSessionConfig({
 		[catalogReady, modelCatalog, scopeConfig.scope],
 	);
 	const handleQuickCycleModel = useCallback(() => {
+		if (droid) return;
 		if (modelChanging || !scopeConfig.scope || scopeConfig.error) return;
 		if (!catalogReady) {
 			void loadModelOptions();
@@ -476,6 +572,7 @@ export function useChatSessionConfig({
 		scopeConfig.scope,
 		scopeConfig.error,
 		scopeModels,
+		droid,
 		selectedModel,
 		selectedThinkingLevel,
 		session.sessionPath,

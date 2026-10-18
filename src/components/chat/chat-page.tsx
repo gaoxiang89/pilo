@@ -43,6 +43,7 @@ import { useChatVisualRetention } from "@/components/chat/use-chat-visual-retent
 import { usePiSessionFeatures } from "@/components/chat/use-pi-session-features";
 import { useScrollbarGutterWidth } from "@/components/chat/use-scrollbar-gutter";
 import { createChatSessionClient } from "@/lib/api/chat-session-client";
+import { omitSlashSuggestions, resolveSessionAgent } from "@/lib/agent";
 import {
 	getActiveStreamingPresentationChars,
 	getStreamingPresentationIntervalMs,
@@ -144,13 +145,16 @@ function ChatPageImpl(props: ChatPageProps) {
 	});
 	const activeTurnSessionIdRef = useRef<string | null>(null);
 	const projectMcpApprovalPendingRef = useRef(false);
+	const agent = resolveSessionAgent(session);
+	const droid = agent === "droid";
 	const client = useMemo(
 		() =>
 			createChatSessionClient(session.projectRecord.id, session.id, undefined, {
 				noSession: session.temporary,
 				owner: "chat_controller",
+				agent,
 			}),
-		[session.projectRecord.id, session.id, session.temporary],
+		[agent, session.projectRecord.id, session.id, session.temporary],
 	);
 	useEffect(() => {
 		client.updateSessionPath(session.sessionPath);
@@ -350,13 +354,13 @@ function ChatPageImpl(props: ChatPageProps) {
 	} = piFeatures;
 	const cacheKeepAlive = useCacheKeepAliveStatus({
 		client: tauriPiloClient,
-		sessionKey: client.sessionKey,
+		sessionKey: droid ? null : client.sessionKey,
 		active,
-		subscribe: true,
+		subscribe: !droid,
 	});
 	const nextPrompt = useNextPrompt({
-		client: tauriPiloClient,
-		connectionId: session.projectRecord.connection.id,
+		client: droid ? null : tauriPiloClient,
+		connectionId: droid ? "" : session.projectRecord.connection.id,
 		sessionKey: client.sessionKey,
 		sessionId: sessionState?.sessionId ?? null,
 		draft,
@@ -371,19 +375,19 @@ function ChatPageImpl(props: ChatPageProps) {
 			recoveryState.status === "reconnecting",
 		model: selectedModel,
 		getSessionState: client.getPiAgentState,
-		subscribe: true,
+		subscribe: !droid,
 	});
 	const { fileSuggestions, handleSuggestionTrigger } = useChatFileSuggestions({
 		projectId: session.projectRecord.id,
 	});
-	const composerSuggestions = useMemo(
-		() => [
+	const composerSuggestions = useMemo(() => {
+		const suggestions = [
 			...fileSuggestions,
 			...piSessionSuggestions(t),
 			...commandSuggestions,
-		],
-		[commandSuggestions, fileSuggestions, t],
-	);
+		];
+		return droid ? omitSlashSuggestions(suggestions) : suggestions;
+	}, [commandSuggestions, droid, fileSuggestions, t]);
 
 	const controllerMessageCount =
 		conversationStore.getSnapshot()?.messages.length ?? baseMessages.length;
@@ -408,6 +412,7 @@ function ChatPageImpl(props: ChatPageProps) {
 			clearDraft,
 			clearImages: () => setComposerImages([]),
 			onNewChat,
+			piCommands: !droid,
 			compact,
 			tryExecuteExtensionCommand,
 			handleSubmit,
@@ -439,7 +444,7 @@ function ChatPageImpl(props: ChatPageProps) {
 	}, [active, activeTurnSessionId, refreshHistoryIfStale]);
 
 	useChatModelShortcuts({
-		active,
+		active: active && !droid,
 		cycleModelShortcut: keyboardShortcuts["cycle-model"],
 		cycleScopedModelShortcut: keyboardShortcuts["cycle-scoped-model"],
 		modelOptions,
@@ -546,7 +551,9 @@ function ChatPageImpl(props: ChatPageProps) {
 												onVirtualizerCacheChange={persistVirtualizerCache}
 												runtimeScrollRef={scrollRef}
 												onForkAssistant={
-													!session.temporary ? handleForkAssistant : undefined
+													!session.temporary && !droid
+														? handleForkAssistant
+														: undefined
 												}
 												forkingMessageId={forkingMessageId}
 												forkDisabled={
@@ -609,18 +616,26 @@ function ChatPageImpl(props: ChatPageProps) {
 												}
 											/>
 										) : null}
-										<CacheKeepAliveNotice
-											key={client.sessionKey}
-											status={cacheKeepAlive.status}
-										/>
+										{droid ? null : (
+											<CacheKeepAliveNotice
+												key={client.sessionKey}
+												status={cacheKeepAlive.status}
+											/>
+										)}
 										<ChatComposer
-											nextPrompt={nextPrompt.text}
+											piControls={!droid}
+											modelControls
+											showThinking
+											nextPrompt={droid ? null : nextPrompt.text}
 											onNextPromptDismiss={nextPrompt.dismiss}
 											value={readOnly ? "" : draft}
 											historyKey={session.projectRecord.id}
 											attachmentScopeKey={`${session.projectRecord.id}:${session.id}`}
-											onUploadFile={(file) =>
-												uploadChatFile(session.projectRecord.id, file)
+											onUploadFile={
+												droid
+													? undefined
+													: (file) =>
+															uploadChatFile(session.projectRecord.id, file)
 											}
 											placeholder={
 												readOnly
@@ -630,11 +645,11 @@ function ChatPageImpl(props: ChatPageProps) {
 													: undefined
 											}
 											onChange={setDraft}
-											images={composerImages}
-											onImagesChange={setComposerImages}
+											images={droid ? EMPTY_CHAT_IMAGES : composerImages}
+											onImagesChange={droid ? undefined : setComposerImages}
 											onSubmit={handleComposerSubmit}
 											onSteer={
-												running
+												running && !droid
 													? (submission) => {
 															void (async () => {
 																if (await tryHandleComposerCommand(submission))
@@ -646,7 +661,7 @@ function ChatPageImpl(props: ChatPageProps) {
 													: undefined
 											}
 											onSendNow={
-												running
+												running && !droid
 													? async (submission) => {
 															if (await tryHandleComposerCommand(submission))
 																return;
@@ -656,7 +671,7 @@ function ChatPageImpl(props: ChatPageProps) {
 													: undefined
 											}
 											onFollowUp={
-												running
+												running && !droid
 													? (submission) => {
 															setComposerImages([]);
 															handleFollowUp(submission);
@@ -694,7 +709,8 @@ function ChatPageImpl(props: ChatPageProps) {
 											suggestions={composerSuggestions}
 											onSuggestionTrigger={handleSuggestionTrigger}
 											models={modelOptions}
-											modelScope={modelScope}
+											modelScope={droid ? undefined : modelScope}
+											canEditScope={!droid}
 											selectedModel={selectedModel}
 											modelLoading={modelLoadState === "loading"}
 											modelError={modelError}
@@ -715,7 +731,8 @@ function ChatPageImpl(props: ChatPageProps) {
 												runtimeBusy ||
 												historyPending ||
 												readOnly ||
-												thinkingLevels.length === 0
+												// Droid reads a resumed session's levels when the menu opens.
+												(thinkingLevels.length === 0 && !droid)
 											}
 											onThinkingMenuOpen={() => void loadThinkingLevels()}
 											onThinkingChange={handleThinkingChange}

@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 
-use super::{agent_dir, session_dir_key};
+use super::{agent_dir, droid_session_dir_key, factory_sessions_dir, session_dir_key};
 use crate::ServerState;
 
 const SESSION_WATCH_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(150);
@@ -26,23 +26,54 @@ pub(crate) struct SessionWatchParams {
 pub(crate) struct SessionWatchStopParams {
     stream_id: String,
 }
-fn session_watch_paths(project: &str) -> Result<(PathBuf, PathBuf), String> {
-    let agent = agent_dir().ok_or_else(|| "Pi agent directory is unavailable".to_owned())?;
-    let sessions = agent.join("sessions");
-    let target = sessions.join(session_dir_key(project));
-    let watch_root = if target.is_dir() {
-        target.clone()
-    } else if sessions.is_dir() {
-        sessions
-    } else if agent.is_dir() {
-        agent
+fn watch_set(parent: PathBuf, fallback: PathBuf, target: PathBuf) -> Option<(PathBuf, PathBuf)> {
+    if target.is_dir() {
+        Some((target.clone(), target))
+    } else if parent.is_dir() {
+        Some((target, parent))
+    } else if fallback.is_dir() {
+        Some((target, fallback))
     } else {
+        None
+    }
+}
+
+fn session_watch_sets(project: &str) -> Result<Vec<(PathBuf, PathBuf)>, String> {
+    let mut sets = Vec::new();
+    if let Some(agent) = agent_dir() {
+        let sessions = agent.join("sessions");
+        let target = sessions.join(session_dir_key(project));
+        if let Some(set) = watch_set(sessions, agent, target) {
+            sets.push(set);
+        }
+    }
+    if let Some(root) = factory_sessions_dir() {
+        let target = root.join(droid_session_dir_key(project));
+        if target.is_dir() {
+            sets.push((target.clone(), target));
+        } else if root.is_dir() {
+            sets.push((target, root));
+        }
+    }
+    if sets.is_empty() {
+        let agent = agent_dir().unwrap_or_else(|| PathBuf::from(".pi/agent"));
         return Err(format!(
             "Pi agent directory '{}' is not accessible",
             agent.display()
         ));
-    };
-    Ok((target, watch_root))
+    }
+    Ok(sets)
+}
+
+fn change_matches_targets(
+    event: &Event,
+    targets: &[PathBuf],
+    touched: &mut HashSet<PathBuf>,
+    full_refresh: &mut bool,
+) -> bool {
+    targets
+        .iter()
+        .any(|target| collect_session_change_paths(event, target, touched, full_refresh))
 }
 
 pub(crate) fn collect_session_change_paths(
@@ -94,20 +125,44 @@ pub(crate) async fn session_watch_start(
         task.abort();
     }
 
-    let (target, watch_root) = session_watch_paths(&params.project)?;
+    let sets = session_watch_sets(&params.project)?;
+    let targets = sets
+        .iter()
+        .map(|(target, _)| target.clone())
+        .collect::<Vec<_>>();
+    let mut watch_roots = Vec::new();
+    for (_, root) in &sets {
+        if !watch_roots
+            .iter()
+            .any(|existing: &PathBuf| existing == root)
+        {
+            watch_roots.push(root.clone());
+        }
+    }
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let mut watcher = notify::recommended_watcher(move |event| {
         let _ = event_tx.send(event);
     })
     .map_err(|error| format!("failed to create session watcher: {error}"))?;
-    watcher
-        .watch(&watch_root, RecursiveMode::Recursive)
-        .map_err(|error| {
-            format!(
-                "failed to watch Pi session directory '{}': {error}",
-                watch_root.display()
-            )
-        })?;
+    let mut watched = 0_usize;
+    for root in &watch_roots {
+        if watcher.watch(root, RecursiveMode::Recursive).is_ok() {
+            watched += 1;
+        }
+    }
+    if watched == 0 {
+        return Err(format!(
+            "failed to watch session directory '{}'",
+            watch_roots
+                .first()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "unknown".to_owned())
+        ));
+    }
+    let watch_root = watch_roots
+        .first()
+        .cloned()
+        .unwrap_or_else(|| PathBuf::from("."));
 
     let stream_id = params.stream_id.clone();
     let writer = state.writer.clone();
@@ -133,12 +188,7 @@ pub(crate) async fn session_watch_start(
                 Ok(event) => {
                     let mut touched = HashSet::new();
                     let mut full_refresh = false;
-                    if !collect_session_change_paths(
-                        &event,
-                        &target,
-                        &mut touched,
-                        &mut full_refresh,
-                    ) {
+                    if !change_matches_targets(&event, &targets, &mut touched, &mut full_refresh) {
                         continue;
                     }
                     let mut errors = Vec::new();
@@ -147,9 +197,9 @@ pub(crate) async fn session_watch_start(
                     loop {
                         match tokio::time::timeout_at(deadline, event_rx.recv()).await {
                             Ok(Some(Ok(next))) => {
-                                if collect_session_change_paths(
+                                if change_matches_targets(
                                     &next,
-                                    &target,
+                                    &targets,
                                     &mut touched,
                                     &mut full_refresh,
                                 ) {

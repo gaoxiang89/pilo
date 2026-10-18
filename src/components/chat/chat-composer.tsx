@@ -119,6 +119,12 @@ type ChatComposerProps = {
 	onNextPromptDismiss?: () => void;
 	/** 桌面专属的快捷键提示与自动聚焦；Remote WebUI 传 false。 */
 	desktopShortcuts?: boolean;
+	/** Droid 会话隐藏附件。斜杠命令由调用方过滤。 */
+	piControls?: boolean;
+	/** 未传时跟随 piControls。Droid 只打开模型选择。 */
+	modelControls?: boolean;
+	/** 未传时跟随 piControls。Droid 没有思考档位。 */
+	showThinking?: boolean;
 };
 
 const EMPTY_MODELS: readonly PiModel[] = [];
@@ -170,7 +176,12 @@ export function ChatComposer({
 	nextPrompt,
 	onNextPromptDismiss,
 	desktopShortcuts = true,
+	piControls = true,
+	modelControls,
+	showThinking,
 }: ChatComposerProps) {
+	const showModelControls = modelControls ?? piControls;
+	const showThinkingControls = showThinking ?? piControls;
 	const { t } = useTranslation();
 	const composerPlaceholder = placeholder ?? t("chat.composerPlaceholder");
 	const rootRef = useRef<HTMLDivElement>(null);
@@ -243,7 +254,7 @@ export function ChatComposer({
 		onImagesChange,
 		onUploadFile,
 		scopeKey: attachmentScopeKey ?? historyKey,
-		disabled,
+		disabled: disabled || !piControls,
 		rootRef,
 		onFilesAdded: (paths) => {
 			onNextPromptDismiss?.();
@@ -692,77 +703,84 @@ export function ChatComposer({
 					<output className="sr-only" aria-live="polite">
 						{processing ? t("chat.preparingAttachments") : ""}
 					</output>
-					<input
-						ref={fileInputRef}
-						type="file"
-						disabled={disabled || sendingNow || processing}
-						multiple
-						className="hidden"
-						onChange={handleFiles}
-					/>
-					<Tooltip>
-						<TooltipTrigger asChild>
-							<Button
-								type="button"
-								disabled={disabled || sendingNow || processing}
-								variant="ghost"
-								size="icon"
-								className={CHAT_COMPOSER_ATTACHMENT_BUTTON_CLASS_NAME}
-								data-chat-composer-attachment=""
-								aria-label={
-									processing
-										? t("chat.preparingAttachments")
-										: t("chat.addAttachment")
-								}
-								aria-busy={processing}
-								onClick={() => {
-									onNextPromptDismiss?.();
-									textareaRef.current?.blur();
-									fileInputRef.current?.click();
-								}}
-							>
-								{processing ? (
-									<LoaderCircle
-										className="size-4 animate-spin motion-reduce:animate-none"
-										aria-hidden="true"
-									/>
-								) : (
-									<Plus className="size-4" />
-								)}
-							</Button>
-						</TooltipTrigger>
-						<TooltipContent>
-							{processing
-								? t("chat.preparingAttachments")
-								: t("chat.addAttachment")}
-						</TooltipContent>
-					</Tooltip>
-
-					<ComposerRunConfig
-						models={models}
-						modelScope={modelScope}
-						canEditScope={canEditScope}
-						selectedModel={selectedModel}
-						modelLoading={modelLoading}
-						modelError={modelError}
-						modelDisabled={modelDisabled}
-						onModelMenuOpen={onModelMenuOpen}
-						onModelRefresh={onModelRefresh}
-						onModelChange={
-							onModelChange
-								? (model) => {
-										onNextPromptDismiss?.();
-										onModelChange(model);
+					{piControls ? (
+						<input
+							ref={fileInputRef}
+							type="file"
+							disabled={disabled || sendingNow || processing}
+							multiple
+							className="hidden"
+							onChange={handleFiles}
+						/>
+					) : null}
+					{piControls ? (
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<Button
+									type="button"
+									disabled={disabled || sendingNow || processing}
+									variant="ghost"
+									size="icon"
+									className={CHAT_COMPOSER_ATTACHMENT_BUTTON_CLASS_NAME}
+									data-chat-composer-attachment=""
+									aria-label={
+										processing
+											? t("chat.preparingAttachments")
+											: t("chat.addAttachment")
 									}
-								: undefined
-						}
-						thinkingLevels={thinkingLevels}
-						selectedThinkingLevel={selectedThinkingLevel}
-						thinkingLoading={thinkingLoading}
-						thinkingDisabled={thinkingDisabled}
-						onThinkingMenuOpen={onThinkingMenuOpen}
-						onThinkingChange={onThinkingChange}
-					/>
+									aria-busy={processing}
+									onClick={() => {
+										onNextPromptDismiss?.();
+										textareaRef.current?.blur();
+										fileInputRef.current?.click();
+									}}
+								>
+									{processing ? (
+										<LoaderCircle
+											className="size-4 animate-spin motion-reduce:animate-none"
+											aria-hidden="true"
+										/>
+									) : (
+										<Plus className="size-4" />
+									)}
+								</Button>
+							</TooltipTrigger>
+							<TooltipContent>
+								{processing
+									? t("chat.preparingAttachments")
+									: t("chat.addAttachment")}
+							</TooltipContent>
+						</Tooltip>
+					) : null}
+
+					{showModelControls ? (
+						<ComposerRunConfig
+							models={models}
+							modelScope={modelScope}
+							canEditScope={canEditScope}
+							selectedModel={selectedModel}
+							modelLoading={modelLoading}
+							modelError={modelError}
+							modelDisabled={modelDisabled}
+							onModelMenuOpen={onModelMenuOpen}
+							onModelRefresh={onModelRefresh}
+							onModelChange={
+								onModelChange
+									? (model) => {
+											onNextPromptDismiss?.();
+											onModelChange(model);
+										}
+									: undefined
+							}
+							showThinking={showThinkingControls}
+							thinkingLevels={thinkingLevels}
+							selectedThinkingLevel={selectedThinkingLevel}
+							thinkingLoading={thinkingLoading}
+							thinkingDisabled={thinkingDisabled}
+							onThinkingMenuOpen={onThinkingMenuOpen}
+							onThinkingChange={onThinkingChange}
+						/>
+					) : null}
 
 					{pendingFollowUps > 0 ? (
 						<span className="hidden text-2xs tabular-nums text-muted-foreground @min-[40rem]:inline">

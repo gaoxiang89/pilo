@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import type { AgentKind } from "@/lib/agent";
 import { notifyConnectionsChanged } from "@/lib/api/connection-events";
 import type { Connection } from "@/lib/api/pi-runtime";
 import { localConnection, notifyProjectsChanged } from "@/lib/api/projects";
@@ -80,11 +81,17 @@ export async function updateConnectionSettings(
 	id: string,
 	name: string,
 	piExecutable: string | null,
+	options?: {
+		defaultAgent?: AgentKind;
+		droidExecutable?: string | null;
+	},
 ): Promise<Connection> {
 	const connection = await invoke<Connection>("connection_settings_update", {
 		id,
 		name,
 		piExecutable,
+		defaultAgent: options?.defaultAgent,
+		droidExecutable: options?.droidExecutable,
 	});
 	notifyConnectionsChanged();
 	notifyProjectsChanged();
@@ -96,6 +103,16 @@ export function probeConnectionPi(
 	executable?: string | null,
 ): Promise<PiExecutableInfo> {
 	return invoke<PiExecutableInfo>("connection_pi_probe", {
+		id,
+		executable: executable?.trim() || null,
+	});
+}
+
+export function probeConnectionDroid(
+	id: string,
+	executable?: string | null,
+): Promise<PiExecutableInfo> {
+	return invoke<PiExecutableInfo>("connection_droid_probe", {
 		id,
 		executable: executable?.trim() || null,
 	});

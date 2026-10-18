@@ -17,6 +17,7 @@ import type {
 	PiloClientStartChatInput,
 } from "@/lib/api/pilo-client";
 import type { ProjectPiModels } from "@/lib/api/pi-models";
+import type { DroidModelCatalog } from "@/lib/droid-models";
 import type { PiSessionSnapshot } from "@/lib/api/pi-runtime";
 import type {
 	ProjectModelScope,
@@ -270,6 +271,19 @@ export function loadRemoteModels(token: string, projectId: string) {
 	return remoteFetch<ProjectPiModels | null>(
 		token,
 		`/api/v1/models?${query.toString()}`,
+	);
+}
+
+export function loadRemoteDroidModels(
+	token: string,
+	projectId: string,
+	thinking = false,
+) {
+	const query = new URLSearchParams({ projectId });
+	if (thinking) query.set("thinking", "true");
+	return remoteFetch<DroidModelCatalog>(
+		token,
+		`/api/v1/models/droid?${query.toString()}`,
 	);
 }
 

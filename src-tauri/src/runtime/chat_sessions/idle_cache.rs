@@ -143,6 +143,7 @@ mod tests {
             disable_builtin_tools: false,
             disable_extension_discovery: false,
             disable_context_files: false,
+            agent: crate::domain::AgentKind::Pi,
             session: Mutex::new(Default::default()),
             session_path: Arc::new(StdMutex::new(Some("session.jsonl".to_owned()))),
             control_reply: Arc::new(StdMutex::new(None)),

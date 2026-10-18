@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use rusqlite::{Connection as SqliteConnection, OptionalExtension, params};
 
-use crate::domain::{SessionIndexEntry, SessionUiStateUpdate};
+use crate::domain::{AgentKind, SessionIndexEntry, SessionUiStateUpdate};
 
 use super::now_ms;
 
@@ -12,7 +12,7 @@ pub fn list_sessions(
 ) -> Result<Vec<SessionIndexEntry>, String> {
     let mut statement = db.prepare(
         "SELECT s.connection_id,s.project_id,s.pi_session_id,s.session_path,s.name,s.cwd,s.created_at,s.updated_at,s.message_count,s.last_message_at,s.first_user_message_preview,s.file_size,s.file_mtime_ns,s.last_offset,s.indexed_at_ms,
-                COALESCE(u.pinned,0),u.title_override
+                COALESCE(u.pinned,0),u.title_override,s.agent
          FROM sessions s LEFT JOIN session_ui_state u ON u.project_id=s.project_id AND u.session_path=s.session_path
          WHERE s.project_id=?1 ORDER BY s.file_mtime_ns DESC"
     ).map_err(|error| error.to_string())?;
@@ -36,6 +36,7 @@ pub fn list_sessions(
                 indexed_at_ms: row.get::<_, i64>(14)? as u64,
                 pinned: row.get::<_, i64>(15)? != 0,
                 title_override: row.get(16)?,
+                agent: parse_agent(&row.get::<_, String>(17)?),
             })
         })
         .map_err(|error| error.to_string())?;
@@ -67,10 +68,10 @@ pub fn get_session(
         return Ok(None);
     };
     db.query_row(
-        "SELECT s.connection_id,s.project_id,s.pi_session_id,s.session_path,s.name,s.cwd,s.created_at,s.updated_at,s.message_count,s.last_message_at,s.first_user_message_preview,s.file_size,s.file_mtime_ns,s.last_offset,s.indexed_at_ms,COALESCE(u.pinned,0),u.title_override
+        "SELECT s.connection_id,s.project_id,s.pi_session_id,s.session_path,s.name,s.cwd,s.created_at,s.updated_at,s.message_count,s.last_message_at,s.first_user_message_preview,s.file_size,s.file_mtime_ns,s.last_offset,s.indexed_at_ms,COALESCE(u.pinned,0),u.title_override,s.agent
          FROM sessions s LEFT JOIN session_ui_state u ON u.project_id=s.project_id AND u.session_path=s.session_path WHERE s.project_id=?2 AND s.session_path=?1",
         params![session_path, project_id],
-        |row| Ok(SessionIndexEntry { connection_id: row.get(0)?, project_id: row.get(1)?, pi_session_id: row.get(2)?, session_path: row.get(3)?, name: row.get(4)?, cwd: row.get(5)?, created_at: row.get(6)?, updated_at: row.get(7)?, message_count: row.get::<_, i64>(8)? as u64, last_message_at: row.get(9)?, first_user_message_preview: row.get(10)?, file_size: row.get::<_, i64>(11)? as u64, file_mtime_ns: row.get::<_, i64>(12)? as u64, last_offset: row.get::<_, i64>(13)? as u64, indexed_at_ms: row.get::<_, i64>(14)? as u64, pinned: row.get::<_, i64>(15)? != 0, title_override: row.get(16)? })
+        |row| Ok(SessionIndexEntry { connection_id: row.get(0)?, project_id: row.get(1)?, pi_session_id: row.get(2)?, session_path: row.get(3)?, name: row.get(4)?, cwd: row.get(5)?, created_at: row.get(6)?, updated_at: row.get(7)?, message_count: row.get::<_, i64>(8)? as u64, last_message_at: row.get(9)?, first_user_message_preview: row.get(10)?, file_size: row.get::<_, i64>(11)? as u64, file_mtime_ns: row.get::<_, i64>(12)? as u64, last_offset: row.get::<_, i64>(13)? as u64, indexed_at_ms: row.get::<_, i64>(14)? as u64, pinned: row.get::<_, i64>(15)? != 0, title_override: row.get(16)?, agent: parse_agent(&row.get::<_, String>(17)?) })
     ).optional().map_err(|error| error.to_string())
 }
 
@@ -103,10 +104,10 @@ pub fn update_session_ui_state(
 
 pub fn upsert_session(db: &SqliteConnection, session: &SessionIndexEntry) -> Result<(), String> {
     db.execute(
-        "INSERT INTO sessions(connection_id,project_id,pi_session_id,session_path,name,cwd,created_at,updated_at,message_count,last_message_at,first_user_message_preview,file_size,file_mtime_ns,last_offset,indexed_at_ms)
-         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)
-         ON CONFLICT(project_id,session_path) DO UPDATE SET connection_id=excluded.connection_id,project_id=excluded.project_id,pi_session_id=excluded.pi_session_id,name=excluded.name,cwd=excluded.cwd,created_at=excluded.created_at,updated_at=excluded.updated_at,message_count=excluded.message_count,last_message_at=excluded.last_message_at,first_user_message_preview=excluded.first_user_message_preview,file_size=excluded.file_size,file_mtime_ns=excluded.file_mtime_ns,last_offset=excluded.last_offset,indexed_at_ms=excluded.indexed_at_ms",
-        params![session.connection_id,session.project_id,session.pi_session_id,session.session_path,session.name,session.cwd,session.created_at,session.updated_at,session.message_count as i64,session.last_message_at,session.first_user_message_preview,session.file_size as i64,session.file_mtime_ns as i64,session.last_offset as i64,session.indexed_at_ms as i64]
+        "INSERT INTO sessions(connection_id,project_id,pi_session_id,session_path,name,cwd,created_at,updated_at,message_count,last_message_at,first_user_message_preview,file_size,file_mtime_ns,last_offset,indexed_at_ms,agent)
+         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)
+         ON CONFLICT(project_id,session_path) DO UPDATE SET connection_id=excluded.connection_id,project_id=excluded.project_id,pi_session_id=excluded.pi_session_id,name=excluded.name,cwd=excluded.cwd,created_at=excluded.created_at,updated_at=excluded.updated_at,message_count=excluded.message_count,last_message_at=excluded.last_message_at,first_user_message_preview=excluded.first_user_message_preview,file_size=excluded.file_size,file_mtime_ns=excluded.file_mtime_ns,last_offset=excluded.last_offset,indexed_at_ms=excluded.indexed_at_ms,agent=excluded.agent",
+        params![session.connection_id,session.project_id,session.pi_session_id,session.session_path,session.name,session.cwd,session.created_at,session.updated_at,session.message_count as i64,session.last_message_at,session.first_user_message_preview,session.file_size as i64,session.file_mtime_ns as i64,session.last_offset as i64,session.indexed_at_ms as i64,session.agent.as_str()]
     ).map_err(|error| error.to_string())?;
     Ok(())
 }
@@ -157,4 +158,8 @@ pub fn remove_missing_sessions(
         }
     }
     Ok(removed)
+}
+
+fn parse_agent(value: &str) -> AgentKind {
+    AgentKind::parse(value).unwrap_or(AgentKind::Pi)
 }

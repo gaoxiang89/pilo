@@ -450,6 +450,30 @@ pub(super) async fn models(
     }
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct DroidModelsQuery {
+    project_id: String,
+    #[serde(default)]
+    thinking: bool,
+}
+
+/// Droid model catalog for a draft that has no Droid process yet.
+pub(super) async fn droid_models(
+    State(state): State<RemoteHttpState>,
+    Query(query): Query<DroidModelsQuery>,
+) -> Response {
+    let project = match get_project(&state.paths, &query.project_id) {
+        Ok(project) => project,
+        Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
+    };
+    let runtime = state.app.state::<PiloRuntime>();
+    match crate::runtime::project::droid_models(&runtime.servers, &project, query.thinking).await {
+        Ok(catalog) => Json(catalog).into_response(),
+        Err(error) => api_error(StatusCode::BAD_GATEWAY, &error),
+    }
+}
+
 pub(super) async fn models_set(
     State(state): State<RemoteHttpState>,
     Json(mut cache): Json<crate::domain::ProjectModelCache>,
@@ -591,6 +615,8 @@ pub(super) struct ChatStartRequest {
     no_session: Option<bool>,
     #[serde(default)]
     builtin_extensions: Vec<pilo_protocol::BuiltinExtension>,
+    #[serde(default)]
+    agent: crate::domain::AgentKind,
 }
 
 pub(super) async fn chat_start(
@@ -619,6 +645,7 @@ pub(super) async fn chat_start(
         no_session: request.no_session.unwrap_or(false),
         extensions: Vec::new(),
         builtin_extensions: request.builtin_extensions,
+        agent: request.agent,
     };
     let result = if probe {
         // Preparing a no-session probe must not send new_session or index an empty chat.

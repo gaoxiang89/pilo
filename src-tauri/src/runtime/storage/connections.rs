@@ -1,6 +1,6 @@
 use rusqlite::{Connection as SqliteConnection, OptionalExtension, params};
 
-use crate::domain::{Connection, ConnectionKind, ConnectionNamingModel, PiRuntime};
+use crate::domain::{AgentKind, Connection, ConnectionKind, ConnectionNamingModel, PiRuntime};
 
 use super::now_ms;
 
@@ -77,8 +77,8 @@ pub fn clear_connection_naming_model(
 pub fn upsert_connection(db: &SqliteConnection, connection: &Connection) -> Result<(), String> {
     let kind_json = serde_json::to_string(&connection.kind).map_err(|error| error.to_string())?;
     db.execute(
-        "INSERT INTO connections(id,name,kind_json,pi_executable,pi_runtime,shown_in_home,updated_at_ms) VALUES(?1,?2,?3,?4,?5,?6,?7)
-         ON CONFLICT(id) DO UPDATE SET name=excluded.name, kind_json=excluded.kind_json, pi_executable=excluded.pi_executable, pi_runtime=excluded.pi_runtime, updated_at_ms=excluded.updated_at_ms",
+        "INSERT INTO connections(id,name,kind_json,pi_executable,pi_runtime,shown_in_home,default_agent,droid_executable,updated_at_ms) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)
+         ON CONFLICT(id) DO UPDATE SET name=excluded.name, kind_json=excluded.kind_json, pi_executable=excluded.pi_executable, pi_runtime=excluded.pi_runtime, default_agent=excluded.default_agent, droid_executable=excluded.droid_executable, updated_at_ms=excluded.updated_at_ms",
         params![
             connection.id,
             connection.name,
@@ -86,6 +86,8 @@ pub fn upsert_connection(db: &SqliteConnection, connection: &Connection) -> Resu
             connection.pi_executable,
             connection.pi_runtime.as_str(),
             connection.shown_in_home as i64,
+            connection.default_agent.as_str(),
+            connection.droid_executable,
             now_ms() as i64
         ],
     ).map_err(|error| error.to_string())?;
@@ -108,7 +110,7 @@ pub fn set_connection_shown_in_home(
 
 pub fn list_connections(db: &SqliteConnection) -> Result<Vec<Connection>, String> {
     let mut statement = db
-        .prepare("SELECT id,name,kind_json,pi_executable,pi_runtime,shown_in_home FROM connections ORDER BY name COLLATE NOCASE ASC")
+        .prepare("SELECT id,name,kind_json,pi_executable,pi_runtime,shown_in_home,default_agent,droid_executable FROM connections ORDER BY name COLLATE NOCASE ASC")
         .map_err(|error| error.to_string())?;
     let rows = statement
         .query_map([], |row| {
@@ -128,11 +130,19 @@ pub fn list_connections(db: &SqliteConnection) -> Result<Vec<Connection>, String
                 pi_runtime,
                 kind,
                 shown_in_home: row.get::<_, i64>(5)? != 0,
+                default_agent: parse_agent(row, 6)?,
+                droid_executable: row.get(7)?,
             })
         })
         .map_err(|error| error.to_string())?;
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|error| error.to_string())
+}
+
+fn parse_agent(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<AgentKind> {
+    let value: String = row.get(index)?;
+    // 未知值回落到 Pi，避免一行脏数据让整个连接列表打不开。
+    Ok(AgentKind::parse(&value).unwrap_or(AgentKind::Pi))
 }
 
 fn parse_pi_runtime(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<PiRuntime> {
@@ -148,7 +158,7 @@ fn parse_pi_runtime(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<P
 
 pub fn get_connection(db: &SqliteConnection, id: &str) -> Result<Option<Connection>, String> {
     db.query_row(
-        "SELECT id,name,kind_json,pi_executable,pi_runtime,shown_in_home FROM connections WHERE id=?1",
+        "SELECT id,name,kind_json,pi_executable,pi_runtime,shown_in_home,default_agent,droid_executable FROM connections WHERE id=?1",
         params![id],
         |row| {
             let kind_json: String = row.get(2)?;
@@ -167,6 +177,8 @@ pub fn get_connection(db: &SqliteConnection, id: &str) -> Result<Option<Connecti
                 pi_runtime,
                 kind,
                 shown_in_home: row.get::<_, i64>(5)? != 0,
+                default_agent: parse_agent(row, 6)?,
+                droid_executable: row.get(7)?,
             })
         },
     )
@@ -185,6 +197,8 @@ pub fn ensure_local_connection(db: &SqliteConnection) -> Result<Connection, Stri
         pi_runtime: PiRuntime::default(),
         kind: ConnectionKind::Local,
         shown_in_home: true,
+        default_agent: AgentKind::Pi,
+        droid_executable: None,
     };
     upsert_connection(db, &connection)?;
     Ok(connection)

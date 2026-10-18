@@ -64,3 +64,10 @@ test("desktop trigger shows the selected model and thinking level", () => {
 
 	assert.match(trigger, /aria-label="Run config: Model One · High"/);
 });
+
+test("model-only trigger omits the reasoning chip", () => {
+	const trigger = renderTrigger({ showThinking: false });
+
+	assert.match(trigger, /aria-label="Model: Model One"/);
+	assert.doesNotMatch(trigger, /·/);
+});

@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 import { i18n } from "../../i18n/index.ts";
 import type { FsEntry } from "@/lib/api/files";
+import type { DroidModelCatalog } from "@/lib/droid-models";
 import type { Connection, PiSessionSnapshot } from "@/lib/api/pi-runtime";
 
 export const PROJECTS_CHANGED_EVENT = "pilo:projects-changed";
@@ -72,6 +73,17 @@ export function readConnectionDir(
 	path = "/",
 ): Promise<FsEntry[]> {
 	return invoke<FsEntry[]>("connection_fs_read_dir", { connectionId, path });
+}
+
+/** Probe the Droid model catalog in the project's environment. */
+export function loadProjectDroidModels(
+	projectId: string,
+	thinking = false,
+): Promise<DroidModelCatalog> {
+	return invoke<DroidModelCatalog>("project_droid_models", {
+		projectId,
+		thinking,
+	});
 }
 
 export function refreshProject(id: string): Promise<Project> {

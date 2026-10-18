@@ -170,7 +170,7 @@ impl ChatSessions {
             ));
         }
         let command_id = command.get("id").and_then(Value::as_str).map(str::to_owned);
-        let process = {
+        let (process, events) = {
             let mut registry = self.registry.lock().await;
             registry.usage_sequence = registry.usage_sequence.saturating_add(1);
             let process = registry
@@ -178,13 +178,14 @@ impl ChatSessions {
                 .get(session_key)
                 .cloned()
                 .ok_or_else(|| format!("session '{session_key}' is not running"))?;
+            let events = registry.events.clone();
             // Read-only polling must not keep an otherwise idle Pi warm forever.
             if !command_type.starts_with("get_") {
                 process
                     .last_used
                     .store(registry.usage_sequence, Ordering::Release);
             }
-            process
+            (process, events)
         };
         let started = Instant::now();
         runtime_trace(
@@ -193,7 +194,7 @@ impl ChatSessions {
             None,
             json!({ "command": command_type, "id": command_id }),
         );
-        let session = process.session.lock().await;
+        let mut session = process.session.lock().await;
         let lock_wait_ms = started.elapsed().as_millis();
         if process.closed.load(Ordering::Acquire) {
             return Err("project is closing".to_owned());
@@ -223,6 +224,16 @@ impl ChatSessions {
                 .lock()
                 .unwrap_or_else(|error| error.into_inner()) = Some(id);
             owns_prompt_flag = true;
+        }
+        if process.agent == crate::domain::AgentKind::Droid && command_type != "prompt" {
+            return answer_droid_command(
+                &process,
+                &mut session,
+                session_key,
+                &command,
+                events.as_ref(),
+            )
+            .await;
         }
         let result = session.send_rpc(command).await;
         if result.is_err()
@@ -368,5 +379,127 @@ impl ChatSessions {
         });
 
         Ok(())
+    }
+}
+
+async fn answer_droid_command(
+    process: &ChatProcess,
+    session: &mut super::super::server_pi::ServerPiSession,
+    session_key: &str,
+    command: &Value,
+    events: Option<&super::super::events::RuntimeEventBus>,
+) -> Result<(), String> {
+    let command_type = command
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let mut message = droid_rpc_message(process, command);
+    if matches!(
+        command_type,
+        "get_available_models"
+            | "set_model"
+            | "get_state"
+            | "get_available_thinking_levels"
+            | "set_thinking_level"
+    ) {
+        match session.send_rpc_result(command.clone()).await {
+            Ok(data) => {
+                if command_type == "get_state" {
+                    if let Some(object) = message.get_mut("data").and_then(Value::as_object_mut) {
+                        for key in ["model", "thinkingLevel"] {
+                            if let Some(value) = data.get(key) {
+                                object.insert(key.to_owned(), value.clone());
+                            }
+                        }
+                    }
+                } else {
+                    message = json!({
+                        "type": "response",
+                        "id": command.get("id").cloned().unwrap_or(Value::Null),
+                        "command": command_type,
+                        "success": true,
+                        "data": data,
+                    });
+                }
+            }
+            Err(error) => {
+                if command_type != "get_state" {
+                    message = json!({
+                        "type": "response",
+                        "id": command.get("id").cloned().unwrap_or(Value::Null),
+                        "command": command_type,
+                        "success": false,
+                        "error": error,
+                    });
+                }
+            }
+        }
+    }
+    let events = events.ok_or_else(|| "runtime event bus is unavailable".to_owned())?;
+    events.send(RuntimeEventEnvelope::session(
+        session_key.to_owned(),
+        process.project_id.clone(),
+        RuntimeEvent::RpcMessage {
+            generation: session.snapshot().generation,
+            message,
+        },
+    ));
+    if command_type == "abort" {
+        session.stop().await?;
+    }
+    Ok(())
+}
+
+fn droid_rpc_message(process: &ChatProcess, command: &Value) -> Value {
+    let id = command.get("id").cloned().unwrap_or(Value::Null);
+    let command_type = command
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let session_path = process
+        .session_path
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .clone();
+    let session_id = session_path.as_deref().and_then(|path| {
+        std::path::Path::new(path)
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .map(str::to_owned)
+    });
+    let data = match command_type {
+        "get_state" => Some(json!({
+            "model": null,
+            "thinkingLevel": "off",
+            "isStreaming": process.active_turn.load(Ordering::Acquire),
+            "isCompacting": false,
+            "sessionFile": session_path,
+            "sessionId": session_id,
+            "messageCount": 0,
+            "pendingMessageCount": 0,
+        })),
+        "get_available_models" => Some(json!({ "models": [] })),
+        "get_available_thinking_levels" => Some(json!({ "levels": [] })),
+        "get_commands" => Some(json!({ "commands": [] })),
+        "get_messages" => Some(json!({ "messages": [] })),
+        "get_session_stats" => Some(json!({})),
+        "abort" => Some(json!({})),
+        _ => None,
+    };
+    match data {
+        Some(data) => json!({
+            "type": "response",
+            "id": id,
+            "command": command_type,
+            "success": true,
+            "data": data,
+        }),
+        None => json!({
+            "type": "response",
+            "id": id,
+            "command": command_type,
+            "success": false,
+            "error": "not available for Droid sessions",
+        }),
     }
 }

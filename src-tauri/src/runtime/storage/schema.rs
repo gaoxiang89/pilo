@@ -69,6 +69,8 @@ pub(super) fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
            pi_executable TEXT,
            pi_runtime TEXT NOT NULL DEFAULT 'workspace',
            shown_in_home INTEGER NOT NULL DEFAULT 0,
+           default_agent TEXT NOT NULL DEFAULT 'pi',
+           droid_executable TEXT,
            updated_at_ms INTEGER NOT NULL
          );
          CREATE TABLE IF NOT EXISTS connection_naming_models (
@@ -134,7 +136,8 @@ pub(super) fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
            file_size INTEGER NOT NULL,
            file_mtime_ns INTEGER NOT NULL,
            last_offset INTEGER NOT NULL,
-           indexed_at_ms INTEGER NOT NULL
+           indexed_at_ms INTEGER NOT NULL,
+           agent TEXT NOT NULL DEFAULT 'pi'
          );
          CREATE INDEX IF NOT EXISTS idx_sessions_project_mtime ON sessions(project_id, file_mtime_ns DESC);
          CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_project_pi_id ON sessions(project_id, pi_session_id);
@@ -184,6 +187,7 @@ pub(super) fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
     .map_err(|error| format!("failed to initialize Pilo SQLite schema: {error}"))?;
     ensure_session_project_keys(db)?;
     ensure_connection_columns(db)?;
+    ensure_session_columns(db)?;
     ensure_project_columns(db)?;
     ensure_project_model_cache_columns(db)?;
     ensure_remote_device_columns(db)?;
@@ -323,6 +327,24 @@ fn ensure_connection_columns(db: &SqliteConnection) -> Result<(), String> {
              UPDATE connections SET shown_in_home=1 WHERE id='local';",
         )
         .map_err(|error| error.to_string())?;
+    }
+    if !column_exists(db, "connections", "default_agent")? {
+        db.execute_batch(
+            "ALTER TABLE connections ADD COLUMN default_agent TEXT NOT NULL DEFAULT 'pi';",
+        )
+        .map_err(|error| error.to_string())?;
+    }
+    if !column_exists(db, "connections", "droid_executable")? {
+        db.execute_batch("ALTER TABLE connections ADD COLUMN droid_executable TEXT;")
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+fn ensure_session_columns(db: &SqliteConnection) -> Result<(), String> {
+    if !column_exists(db, "sessions", "agent")? {
+        db.execute_batch("ALTER TABLE sessions ADD COLUMN agent TEXT NOT NULL DEFAULT 'pi';")
+            .map_err(|error| error.to_string())?;
     }
     Ok(())
 }

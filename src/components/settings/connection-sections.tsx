@@ -20,6 +20,7 @@ import {
 } from "@/lib/api/connections";
 import { userErrorMessage } from "@/lib/app-error";
 import { i18n } from "@/i18n";
+import type { AgentKind } from "@/lib/agent";
 import type { Connection } from "@/lib/api/pi-runtime";
 import { connectionLabel } from "@/lib/api/projects";
 import { IS_WINDOWS } from "@/components/title-bar";
@@ -33,6 +34,11 @@ import {
 	DialogTitle,
 	DropdownMenu,
 	Input,
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
 	DropdownMenuContent,
 	DropdownMenuItem,
 	DropdownMenuTrigger,
@@ -209,23 +215,29 @@ export type ConnectionSettingsDraft = {
 	connection: Connection;
 	name: string;
 	piExecutable: string;
+	defaultAgent: AgentKind;
+	droidExecutable: string;
 };
 
 export function ConnectionSettingsDialog({
 	draft,
 	busy,
 	probing,
+	probingDroid,
 	onChange,
 	onClose,
 	onProbe,
+	onProbeDroid,
 	onSave,
 }: {
 	draft: ConnectionSettingsDraft | null;
 	busy: boolean;
 	probing: boolean;
+	probingDroid: boolean;
 	onChange: (draft: ConnectionSettingsDraft) => void;
 	onClose: () => void;
 	onProbe: () => void;
+	onProbeDroid: () => void;
 	onSave: () => void;
 }) {
 	const usesLocalPi =
@@ -283,7 +295,7 @@ export function ConnectionSettingsDialog({
 									<Button
 										variant="outline"
 										size="sm"
-										disabled={busy || probing}
+										disabled={busy || probing || probingDroid}
 										onClick={onProbe}
 									>
 										{probing
@@ -293,6 +305,66 @@ export function ConnectionSettingsDialog({
 								</div>
 							</label>
 						)}
+						<label
+							htmlFor="connection-default-agent"
+							className="grid gap-1 text-xs"
+						>
+							{t("connection.defaultAgent")}
+							<Select
+								value={draft.defaultAgent}
+								onValueChange={(value) =>
+									onChange({
+										...draft,
+										defaultAgent: value === "droid" ? "droid" : "pi",
+									})
+								}
+							>
+								<SelectTrigger
+									id="connection-default-agent"
+									className={SETTINGS_CONTROL_CLASS}
+								>
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="pi">
+										{t("connection.defaultAgentPi")}
+									</SelectItem>
+									<SelectItem value="droid">
+										{t("connection.defaultAgentDroid")}
+									</SelectItem>
+								</SelectContent>
+							</Select>
+						</label>
+						<label
+							htmlFor="connection-droid-path"
+							className="grid gap-1 text-xs"
+						>
+							{t("connection.droidPath")}
+							<div className="flex gap-2">
+								<Input
+									id="connection-droid-path"
+									className={cn(SETTINGS_CONTROL_CLASS, "font-mono")}
+									value={draft.droidExecutable}
+									onChange={(event) =>
+										onChange({
+											...draft,
+											droidExecutable: event.target.value,
+										})
+									}
+									placeholder={t("connection.autoDetect")}
+								/>
+								<Button
+									variant="outline"
+									size="sm"
+									disabled={busy || probing || probingDroid}
+									onClick={onProbeDroid}
+								>
+									{probingDroid
+										? t("connection.detecting")
+										: t("connection.detectDroid")}
+								</Button>
+							</div>
+						</label>
 						<div className="mt-1 flex justify-end gap-2">
 							<Button
 								size="sm"

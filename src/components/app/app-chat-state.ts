@@ -1,4 +1,5 @@
 import type { ChatSession } from "@/components/chat/chat-page";
+import { resolveSessionAgent, type AgentKind } from "@/lib/agent";
 import { i18n } from "../../i18n/index.ts";
 import type { ChatImageAttachment } from "@/lib/chat/chat-submission";
 import type { SidebarSession } from "@/components/sidebar/types";
@@ -36,6 +37,7 @@ export function toSidebarSession(session: SessionIndexEntry): SidebarSession {
 		sessionPath: session.sessionPath,
 		projectId: session.projectId,
 		latestMessageAt: sessionDate(session),
+		agent: resolveSessionAgent(session),
 	};
 	sidebarSessionCache.set(session, sidebarSession);
 	return sidebarSession;
@@ -94,6 +96,7 @@ export function mergeSidebarSessionsWithOpenChats(
 			sessionPath: entry.session.sessionPath ?? "",
 			projectId: entry.session.projectRecord.id,
 			latestMessageAt: now,
+			agent: resolveSessionAgent(entry.session),
 			active: busyControllerSince.has(entry.controllerId),
 			runningSince: busySinceAt(entry.controllerId) ?? undefined,
 		});
@@ -209,6 +212,7 @@ export function indexedChatSession(
 		historyFileMtimeNs: session.fileMtimeNs,
 		externalRunning,
 		externalTurnOpen,
+		agent: resolveSessionAgent(session),
 	};
 }
 
@@ -229,6 +233,7 @@ export function resolveChatSession({
 	draftSessionId,
 	draftSessionModel,
 	draftSessionThinkingLevel,
+	draftSessionAgent,
 }: {
 	selectedOpenedChat: OpenChat | null;
 	selectedOpenedChatBusy: boolean;
@@ -242,6 +247,7 @@ export function resolveChatSession({
 	draftSessionId: string;
 	draftSessionModel: PiModel | null;
 	draftSessionThinkingLevel: PiThinkingLevel | null;
+	draftSessionAgent: AgentKind;
 }): ChatSession | null {
 	if (
 		selectedOpenedChat &&
@@ -283,6 +289,7 @@ export function resolveChatSession({
 			temporary: draftTemporary || undefined,
 			initialModel: draftSessionModel ?? undefined,
 			initialThinkingLevel: draftSessionThinkingLevel ?? undefined,
+			agent: draftSessionAgent,
 		};
 	}
 	return null;

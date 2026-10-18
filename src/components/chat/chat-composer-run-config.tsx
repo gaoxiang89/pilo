@@ -61,6 +61,7 @@ type ComposerRunConfigProps = {
 	onModelMenuOpen?: () => void;
 	onModelRefresh?: () => void;
 	onModelChange?: (model: PiModel | null) => void;
+	showThinking?: boolean;
 	thinkingLevels: readonly PiThinkingLevel[];
 	selectedThinkingLevel: PiThinkingLevel | null;
 	thinkingLoading: boolean;
@@ -74,6 +75,7 @@ export function ComposerRunConfig(props: ComposerRunConfigProps) {
 	const isTouch = useIsTouchDevice();
 	const [open, setOpen] = useState(false);
 	const [modelOpen, setModelOpen] = useState(false);
+	const showThinking = props.showThinking !== false;
 	const label = props.selectedModel?.name || props.selectedModel?.id || "—";
 	const thinking = thinkingLevelLabel(props.selectedThinkingLevel);
 	// Membership editing is independent of the active Pi process and remains usable during streaming.
@@ -91,7 +93,11 @@ export function ComposerRunConfig(props: ComposerRunConfigProps) {
 		}
 	};
 	const trigger = (
-		<RunConfigTrigger label={label} thinking={thinking} disabled={disabled} />
+		<RunConfigTrigger
+			label={label}
+			thinking={showThinking ? thinking : null}
+			disabled={disabled}
+		/>
 	);
 	const panel = (
 		<RunConfigPanel
@@ -99,6 +105,28 @@ export function ComposerRunConfig(props: ComposerRunConfigProps) {
 			{...props}
 		/>
 	);
+
+	if (!isTouch && !showThinking)
+		return (
+			<DropdownMenu open={open} onOpenChange={changeOpen}>
+				<DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+				<DropdownMenuContent
+					side="top"
+					align="start"
+					sideOffset={8}
+					collisionPadding={16}
+					className="w-76 max-w-[calc(100vw-2rem)] p-0"
+				>
+					{open ? (
+						<RunConfigModelPicker
+							key={`${props.modelScope?.projectId ?? ""}:${props.canEditScope}`}
+							{...props}
+							compact
+						/>
+					) : null}
+				</DropdownMenuContent>
+			</DropdownMenu>
+		);
 
 	if (!isTouch)
 		return (
@@ -252,10 +280,14 @@ export function ComposerRunConfig(props: ComposerRunConfigProps) {
 					)}
 				>
 					<DialogPrimitive.Title className="sr-only">
-						{t("chat.runConfigLabel", { model: label, thinking })}
+						{showThinking
+							? t("chat.runConfigLabel", { model: label, thinking })
+							: t("chat.runConfigModelLabel", { model: label })}
 					</DialogPrimitive.Title>
 					<DialogPrimitive.Description className="sr-only">
-						{t("chat.model")} · {t("chat.reasoning")}
+						{showThinking
+							? `${t("chat.model")} · ${t("chat.reasoning")}`
+							: t("chat.model")}
 					</DialogPrimitive.Description>
 					<div className="flex items-center justify-between ps-4 pe-2 pt-2">
 						<span className="text-sm font-medium">{t("chat.model")}</span>
@@ -280,7 +312,7 @@ export function ComposerRunConfig(props: ComposerRunConfigProps) {
 
 type RunConfigTriggerProps = {
 	label: string;
-	thinking: string;
+	thinking: string | null;
 } & Omit<ComponentPropsWithoutRef<"button">, "children" | "className" | "type">;
 
 function RunConfigTrigger({
@@ -294,15 +326,26 @@ function RunConfigTrigger({
 			{...buttonProps}
 			data-chat-run-config-trigger=""
 			type="button"
-			aria-label={t("chat.runConfigLabel", { model: label, thinking })}
+			aria-label={
+				thinking
+					? t("chat.runConfigLabel", { model: label, thinking })
+					: t("chat.runConfigModelLabel", { model: label })
+			}
 			className={CHAT_COMPOSER_RUN_CONFIG_TRIGGER_CLASS_NAME}
 		>
 			<PiLogo className="size-4 text-current" />
 			<span className="block min-w-0 max-w-40 truncate text-left">{label}</span>
-			<span aria-hidden="true" className="shrink-0 text-muted-foreground/60">
-				·
-			</span>
-			<span className="shrink-0">{thinking}</span>
+			{thinking ? (
+				<>
+					<span
+						aria-hidden="true"
+						className="shrink-0 text-muted-foreground/60"
+					>
+						·
+					</span>
+					<span className="shrink-0">{thinking}</span>
+				</>
+			) : null}
 		</button>
 	);
 }
@@ -331,37 +374,39 @@ function RunConfigPanel(props: ComposerRunConfigProps) {
 	return (
 		<>
 			<RunConfigModelPicker {...props} />
-			<div className="@container border-t border-border/60 px-3 pt-3 pb-1">
-				<div className="mb-2 flex items-center gap-2 text-sm font-medium text-muted-foreground">
-					{t("chat.reasoning")}
-					{props.thinkingLoading ? <Spinner className="size-3.5" /> : null}
+			{props.showThinking === false ? null : (
+				<div className="@container border-t border-border/60 px-3 pt-3 pb-1">
+					<div className="mb-2 flex items-center gap-2 text-sm font-medium text-muted-foreground">
+						{t("chat.reasoning")}
+						{props.thinkingLoading ? <Spinner className="size-3.5" /> : null}
+					</div>
+					<div className="grid grid-cols-2 gap-1 @min-[17rem]:grid-cols-4">
+						{props.thinkingLevels.map((level) => (
+							<Button
+								key={level}
+								type="button"
+								size="sm"
+								variant={
+									props.selectedThinkingLevel === level ? "secondary" : "ghost"
+								}
+								className="min-h-[max(44px,var(--pilo-sheet-control-height))] rounded-(--pilo-sheet-item-radius) px-2 font-normal shadow-none"
+								disabled={props.thinkingDisabled || !props.onThinkingChange}
+								aria-pressed={props.selectedThinkingLevel === level}
+								onClick={() => props.onThinkingChange?.(level)}
+							>
+								{thinkingLevelLabel(level)}
+							</Button>
+						))}
+						{props.thinkingLevels.length === 0 ? (
+							<p className="col-span-full py-2 text-sm text-muted-foreground">
+								{props.thinkingLoading
+									? t("chat.readingReasoning")
+									: t("chat.noReasoning")}
+							</p>
+						) : null}
+					</div>
 				</div>
-				<div className="grid grid-cols-2 gap-1 @min-[17rem]:grid-cols-4">
-					{props.thinkingLevels.map((level) => (
-						<Button
-							key={level}
-							type="button"
-							size="sm"
-							variant={
-								props.selectedThinkingLevel === level ? "secondary" : "ghost"
-							}
-							className="min-h-[max(44px,var(--pilo-sheet-control-height))] rounded-(--pilo-sheet-item-radius) px-2 font-normal shadow-none"
-							disabled={props.thinkingDisabled || !props.onThinkingChange}
-							aria-pressed={props.selectedThinkingLevel === level}
-							onClick={() => props.onThinkingChange?.(level)}
-						>
-							{thinkingLevelLabel(level)}
-						</Button>
-					))}
-					{props.thinkingLevels.length === 0 ? (
-						<p className="col-span-full py-2 text-sm text-muted-foreground">
-							{props.thinkingLoading
-								? t("chat.readingReasoning")
-								: t("chat.noReasoning")}
-						</p>
-					) : null}
-				</div>
-			</div>
+			)}
 		</>
 	);
 }

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use pilo_protocol::BuiltinExtension;
 
-use crate::domain::Project;
+use crate::domain::{AgentKind, Project};
 
 use super::{
     PiloRuntime, RuntimeEventBus, chat_sessions::ChatSessionLaunch, host_paths::HostPaths,
@@ -18,6 +18,7 @@ pub(crate) struct ChatSessionRequest {
     pub no_session: bool,
     pub extensions: Vec<String>,
     pub builtin_extensions: Vec<BuiltinExtension>,
+    pub agent: AgentKind,
 }
 
 fn get_project(paths: &HostPaths, project_id: &str) -> Result<Project, String> {
@@ -31,15 +32,30 @@ async fn resolve_launch(
     request: &ChatSessionRequest,
 ) -> Result<(Project, ChatSessionLaunch, String), String> {
     let project = get_project(paths, &request.project_id)?;
-    let profile =
-        pi_workspace::resolve_pi_runtime_with_paths(paths, &project, request.extensions.clone())?;
-    let mut builtin_extensions = profile.builtin_extensions;
-    // Probes are throwaway sessions; only normal chats load background assistance.
-    if !request
+    let catalog_probe = request
         .builtin_extensions
         .iter()
-        .any(|extension| matches!(extension, BuiltinExtension::ModelCatalog))
+        .any(|extension| matches!(extension, BuiltinExtension::ModelCatalog));
+    let agent = if catalog_probe {
+        AgentKind::Pi
+    } else if request
+        .session_path
+        .as_deref()
+        .is_some_and(|path| AgentKind::from_session_path(path) == AgentKind::Droid)
     {
+        AgentKind::Droid
+    } else {
+        request.agent
+    };
+    let profile =
+        pi_workspace::resolve_pi_runtime_with_paths(paths, &project, request.extensions.clone())?;
+    let mut builtin_extensions = if agent == AgentKind::Droid {
+        Vec::new()
+    } else {
+        profile.builtin_extensions
+    };
+    // Probes are throwaway sessions; only normal chats load background assistance.
+    if agent == AgentKind::Pi && !catalog_probe {
         builtin_extensions.push(BuiltinExtension::NextPrompt);
         builtin_extensions.push(BuiltinExtension::CacheKeepAlive);
     }
@@ -56,11 +72,16 @@ async fn resolve_launch(
         ChatSessionLaunch {
             session_path: request.session_path.clone(),
             no_session: request.no_session,
-            extensions: profile.extensions,
+            extensions: if agent == AgentKind::Droid {
+                Vec::new()
+            } else {
+                profile.extensions
+            },
             builtin_extensions,
             disable_builtin_tools: profile.disable_builtin_tools,
             disable_extension_discovery: profile.disable_extension_discovery,
             disable_context_files: profile.disable_context_files,
+            agent,
         },
         project.connection.id,
     ))

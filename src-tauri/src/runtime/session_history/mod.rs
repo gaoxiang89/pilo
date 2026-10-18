@@ -1,5 +1,6 @@
 mod cache;
 mod disk;
+mod droid;
 mod images;
 mod parser;
 mod parser_fields;

@@ -215,12 +215,75 @@ pub(super) async fn read_file(
     unreachable!("history retry loop always returns")
 }
 
+async fn read_droid_file(
+    servers: &ServerManager,
+    project: &Project,
+    path: &str,
+) -> Result<(SessionHistory, Option<SessionFileFingerprint>), String> {
+    const CHUNK_BYTES: usize = 16 * 1024 * 1024;
+    let mut cursor = 0_u64;
+    let mut body = Vec::new();
+    let mut fingerprint = None;
+    loop {
+        let (metadata, binary) = servers
+            .request_with_binary(
+                &project.connection,
+                "session.read",
+                serde_json::json!({ "path": path, "offset": cursor, "limit": CHUNK_BYTES }),
+                Vec::new(),
+            )
+            .await?;
+        if binary.len() != 1 {
+            return Err(format!(
+                "session.read expected one binary attachment, got {}",
+                binary.len()
+            ));
+        }
+        if fingerprint.is_none() {
+            fingerprint = fingerprint_from_metadata(&metadata);
+        }
+        let chunk = binary.into_iter().next().expect("binary length checked");
+        let next_offset = metadata
+            .get("nextOffset")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| "pilo-server session chunk is missing nextOffset".to_owned())?;
+        let eof = metadata
+            .get("eof")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        body.extend_from_slice(&chunk);
+        if eof || chunk.is_empty() || next_offset <= cursor {
+            break;
+        }
+        cursor = next_offset;
+    }
+    let mut history = super::droid::parse_droid_history(&body);
+    // Older Droid builds have no sidecar; the history is still usable without it.
+    if let Some(settings_path) = super::droid::droid_settings_path(path)
+        && let Ok((_, binary)) = servers
+            .request_with_binary(
+                &project.connection,
+                "session.read",
+                serde_json::json!({ "path": settings_path, "offset": 0, "limit": 1024 * 1024 }),
+                Vec::new(),
+            )
+            .await
+        && let Some(bytes) = binary.first()
+    {
+        super::droid::apply_droid_settings(&mut history, bytes);
+    }
+    Ok((history, fingerprint))
+}
+
 async fn read_file_once(
     servers: &ServerManager,
     project: &Project,
     path: &str,
     load_permit: Arc<tokio::sync::OwnedSemaphorePermit>,
 ) -> Result<(SessionHistory, Option<SessionFileFingerprint>), String> {
+    if super::droid::is_droid_session_path(path) {
+        return read_droid_file(servers, project, path).await;
+    }
     const CHUNK_BYTES: usize = 16 * 1024 * 1024;
     let mut cursor = 0_u64;
     let mut parser = HistoryParser::with_load_permit(load_permit);

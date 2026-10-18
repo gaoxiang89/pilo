@@ -7,7 +7,7 @@ use pilo_protocol::BuiltinExtension;
 use serde_json::{Value, json};
 use tokio::task::JoinHandle;
 
-use crate::domain::{Connection, Project};
+use crate::domain::{AgentKind, Connection, Project};
 
 use super::{
     events::{PiProcessState, RuntimeErrorCode, RuntimeEvent, RuntimeEventSink},
@@ -79,6 +79,7 @@ pub struct PiLaunchOptions {
     pub disable_context_files: bool,
     pub extensions: Vec<String>,
     pub builtin_extensions: Vec<BuiltinExtension>,
+    pub agent: AgentKind,
     pub provider: Option<String>,
     pub model: Option<String>,
     pub thinking: Option<String>,
@@ -120,6 +121,8 @@ impl SessionSnapshotReader {
 
 pub struct ServerPiSession {
     builtin_extensions: Vec<BuiltinExtension>,
+    agent: AgentKind,
+    discovered_session_path: Option<String>,
     generation: u64,
     snapshot_metadata: Arc<StdMutex<PiSessionSnapshot>>,
     state: Arc<StateCell>,
@@ -163,6 +166,8 @@ impl ServerPiSession {
     pub(crate) fn with_builtin_extensions(builtin_extensions: Vec<BuiltinExtension>) -> Self {
         Self {
             builtin_extensions,
+            agent: AgentKind::Pi,
+            discovered_session_path: None,
             generation: 0,
             snapshot_metadata: Arc::new(StdMutex::new(PiSessionSnapshot {
                 generation: 0,
@@ -189,6 +194,10 @@ impl ServerPiSession {
 
     pub(crate) fn builtin_extensions(&self) -> &[BuiltinExtension] {
         &self.builtin_extensions
+    }
+
+    pub(crate) fn take_discovered_session_path(&mut self) -> Option<String> {
+        self.discovered_session_path.take()
     }
 
     pub(crate) fn next_prompt_ready(&self) -> bool {
@@ -249,6 +258,8 @@ impl ServerPiSession {
         }
 
         self.builtin_extensions = options.builtin_extensions.clone();
+        self.agent = options.agent;
+        self.discovered_session_path = None;
         // A failed generation may still own a server stream. Do not overwrite it.
         self.schedule_cleanup();
         let client = servers.client(&project.connection).await?;
@@ -269,8 +280,10 @@ impl ServerPiSession {
             state: PiProcessState::Starting,
         });
 
+        let droid = options.agent == AgentKind::Droid;
         let stream_id = format!(
-            "pi-{}-{}",
+            "{}-{}-{}",
+            if droid { "droid" } else { "pi" },
             std::process::id(),
             STREAM_SEQUENCE.fetch_add(1, Ordering::Relaxed)
         );
@@ -287,44 +300,69 @@ impl ServerPiSession {
         self.client = Some(Arc::clone(&client));
         self.stream_id = Some(stream_id.clone());
         self.event_task = Some(event_task);
-        if let Err(error) = client
-            .request(
-                "pi.start",
-                json!({
-                    "streamId": stream_id,
-                    "project": project.path,
-                    "sessionPath": options.session_path,
-                    "noSession": options.no_session,
-                    "disableResources": options.disable_resources,
-                    "extensions": options.extensions,
-                    "builtinExtensions": options.builtin_extensions,
-                    "provider": options.provider,
-                    "model": options.model,
-                    "thinking": options.thinking,
-                    "systemPrompt": options.system_prompt,
-                    "piExecutable": project.connection.pi_executable,
-                    "disableBuiltinTools": options.disable_builtin_tools,
-                    "disableExtensionDiscovery": options.disable_extension_discovery,
-                    "disableContextFiles": options.disable_context_files,
-                }),
-            )
-            .await
-        {
-            if let Err(stop_error) = self.stop().await {
-                log::warn!(target: "pilo-server", "failed to roll back Pi startup: {stop_error}");
-                self.schedule_cleanup();
+        let start = if droid {
+            client
+                .request(
+                    "droid.start",
+                    json!({
+                        "streamId": stream_id,
+                        "project": project.path,
+                        "sessionPath": options.session_path,
+                        "droidExecutable": project.connection.droid_executable,
+                    }),
+                )
+                .await
+        } else {
+            client
+                .request(
+                    "pi.start",
+                    json!({
+                        "streamId": stream_id,
+                        "project": project.path,
+                        "sessionPath": options.session_path,
+                        "noSession": options.no_session,
+                        "disableResources": options.disable_resources,
+                        "extensions": options.extensions,
+                        "builtinExtensions": options.builtin_extensions,
+                        "provider": options.provider,
+                        "model": options.model,
+                        "thinking": options.thinking,
+                        "systemPrompt": options.system_prompt,
+                        "piExecutable": project.connection.pi_executable,
+                        "disableBuiltinTools": options.disable_builtin_tools,
+                        "disableExtensionDiscovery": options.disable_extension_discovery,
+                        "disableContextFiles": options.disable_context_files,
+                    }),
+                )
+                .await
+        };
+        let response = match start {
+            Ok(response) => response,
+            Err(error) => {
+                if let Err(stop_error) = self.stop().await {
+                    log::warn!(target: "pilo-server", "failed to roll back Pi startup: {stop_error}");
+                    self.schedule_cleanup();
+                }
+                self.state.set(PiProcessState::Failed);
+                sink.send(RuntimeEvent::RuntimeError {
+                    generation,
+                    code: RuntimeErrorCode::SpawnFailed,
+                    message: error.clone(),
+                });
+                sink.send(RuntimeEvent::ProcessState {
+                    generation,
+                    state: PiProcessState::Failed,
+                });
+                return Err(error);
             }
-            self.state.set(PiProcessState::Failed);
-            sink.send(RuntimeEvent::RuntimeError {
-                generation,
-                code: RuntimeErrorCode::SpawnFailed,
-                message: error.clone(),
-            });
-            sink.send(RuntimeEvent::ProcessState {
-                generation,
-                state: PiProcessState::Failed,
-            });
-            return Err(error);
+        };
+        if droid
+            && let Some(path) = response
+                .get("sessionPath")
+                .and_then(Value::as_str)
+                .filter(|path| !path.is_empty())
+        {
+            self.discovered_session_path = Some(path.to_owned());
         }
 
         self.state.set(PiProcessState::Running);
@@ -342,6 +380,10 @@ impl ServerPiSession {
     }
 
     pub async fn send_rpc(&self, command: Value) -> Result<(), String> {
+        self.send_rpc_result(command).await.map(|_| ())
+    }
+
+    pub async fn send_rpc_result(&self, command: Value) -> Result<Value, String> {
         if !command.is_object() {
             return Err("RPC command must be a JSON object".to_owned());
         }
@@ -353,13 +395,14 @@ impl ServerPiSession {
             .stream_id
             .as_ref()
             .ok_or_else(|| "Pi process is not running".to_owned())?;
+        let method = if self.agent == AgentKind::Droid {
+            "droid.send"
+        } else {
+            "pi.send"
+        };
         client
-            .request(
-                "pi.send",
-                json!({ "streamId": stream_id, "command": command }),
-            )
+            .request(method, json!({ "streamId": stream_id, "command": command }))
             .await
-            .map(|_| ())
     }
 
     pub async fn abort(&self) -> Result<(), String> {

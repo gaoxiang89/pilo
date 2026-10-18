@@ -32,6 +32,7 @@ import { useAppChatNavigation } from "@/components/app/use-app-chat-navigation";
 import { useAppChatSessionActions } from "@/components/app/use-app-chat-session-actions";
 import { useAppSessionIndex } from "@/components/app/use-app-session-index";
 import { useSyncedSessionUnread } from "@/components/app/use-synced-session-unread";
+import type { AgentKind } from "@/lib/agent";
 import { listenRuntimeEvents } from "@/lib/api/pi-runtime";
 import { tauriPiloClient } from "@/lib/api/tauri-pilo-client";
 import type { BusyChatControllersRef } from "@/components/app/use-opened-chat-controllers";
@@ -96,6 +97,7 @@ export function useAppChatWorkspace({
 		submission: ChatSubmission;
 		model: PiModel | null;
 		thinkingLevel: PiThinkingLevel | null;
+		agent: AgentKind;
 	} | null>(null);
 	const [draftSessionPrompt, setDraftSessionPrompt] = useState<string | null>(
 		null,
@@ -108,6 +110,7 @@ export function useAppChatWorkspace({
 	);
 	const [draftSessionThinkingLevel, setDraftSessionThinkingLevel] =
 		useState<PiThinkingLevel | null>(null);
+	const [draftSessionAgent, setDraftSessionAgent] = useState<AgentKind>("pi");
 	const [draftSessionStarted, setDraftSessionStarted] = useState(false);
 	// 落地页是否处于「临时会话」草稿态：点击临时会话按钮只切到落地页，
 	// 直到首条消息发送才真正建立会话。
@@ -126,6 +129,7 @@ export function useAppChatWorkspace({
 		setDraftSessionImages([]);
 		setDraftSessionModel(null);
 		setDraftSessionThinkingLevel(null);
+		setDraftSessionAgent("pi");
 	}, []);
 
 	const handleProjectsRemoved = useCallback(
@@ -244,6 +248,7 @@ export function useAppChatWorkspace({
 				draftSessionId,
 				draftSessionModel,
 				draftSessionThinkingLevel,
+				draftSessionAgent,
 			}),
 		[
 			selectedOpenedChat,
@@ -258,6 +263,7 @@ export function useAppChatWorkspace({
 			draftSessionId,
 			draftSessionModel,
 			draftSessionThinkingLevel,
+			draftSessionAgent,
 		],
 	);
 
@@ -280,6 +286,7 @@ export function useAppChatWorkspace({
 			submission: ChatSubmission,
 			model: PiModel | null,
 			thinkingLevel: PiThinkingLevel | null,
+			agent: AgentKind,
 		) => {
 			const prompt = submission.text;
 			const isTemporary = draftTemporary;
@@ -290,6 +297,7 @@ export function useAppChatWorkspace({
 				temporary: isTemporary || undefined,
 				initialModel: model ?? undefined,
 				initialThinkingLevel: thinkingLevel ?? undefined,
+				agent,
 			};
 			setOpenedChats((current) =>
 				trimOpenedChats(
@@ -301,6 +309,7 @@ export function useAppChatWorkspace({
 			setSelectedSessionId(draftSessionId);
 			setDraftSessionModel(model);
 			setDraftSessionThinkingLevel(thinkingLevel);
+			setDraftSessionAgent(agent);
 			setDraftSessionPrompt(prompt);
 			setDraftSessionImages(submission.images);
 			setDraftSessionStarted(true);
@@ -313,12 +322,14 @@ export function useAppChatWorkspace({
 			submission: ChatSubmission,
 			model: PiModel | null,
 			thinkingLevel: PiThinkingLevel | null,
+			agent: AgentKind,
 		) => {
 			if (!projectsReady) {
 				pendingLandingSubmissionRef.current = {
 					submission,
 					model,
 					thinkingLevel,
+					agent,
 				};
 				return;
 			}
@@ -326,7 +337,7 @@ export function useAppChatWorkspace({
 				toast.info(t("app.addProjectFirst"));
 				return;
 			}
-			startDraftSession(activeProject, submission, model, thinkingLevel);
+			startDraftSession(activeProject, submission, model, thinkingLevel, agent);
 		},
 		[activeProject, projectsReady, startDraftSession, t],
 	);
@@ -346,6 +357,7 @@ export function useAppChatWorkspace({
 			pending.submission,
 			pending.model,
 			pending.thinkingLevel,
+			pending.agent,
 		);
 	}, [activeProject, projectsReady, startDraftSession, t]);
 	/* oxlint-enable react/set-state-in-effect */

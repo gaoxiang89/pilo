@@ -34,12 +34,24 @@ import {
 	subscribeProjectPiModels,
 } from "@/lib/api/pi-models";
 import { usePreferences } from "@/lib/preferences-provider";
-import type { Project } from "@/lib/api/projects";
+import { loadProjectDroidModels, type Project } from "@/lib/api/projects";
 import type { ChatSubmission } from "@/lib/chat/chat-submission";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
 import { tauriPiloClient } from "@/lib/api/tauri-pilo-client";
 import { useProjectModelScope } from "@/lib/use-project-model-scope";
+import { AgentPicker } from "@/components/chat/agent-picker";
 import { DraftProjectPicker } from "@/components/chat/draft-project-picker";
+import {
+	connectionDefaultAgent,
+	omitSlashSuggestions,
+	type AgentKind,
+} from "@/lib/agent";
+import {
+	loadDroidModels,
+	readDroidModelCache,
+	subscribeDroidModels,
+	type DroidModelCache,
+} from "@/lib/droid-models";
 
 function modelKey(model: PiModel | null): string | null {
 	return model ? `${model.provider}\0${model.id}` : null;
@@ -72,6 +84,7 @@ export function NewChatLanding({
 		submission: ChatSubmission,
 		model: PiModel | null,
 		thinkingLevel: PiThinkingLevel | null,
+		agent: AgentKind,
 	) => void;
 	onNewChat?: () => void;
 	onOpenTerminal?: () => void;
@@ -94,6 +107,11 @@ export function NewChatLanding({
 	const { t } = useTranslation();
 	const { keyboardShortcuts } = usePreferences();
 	const projectId = project?.id ?? null;
+	const [agent, setAgent] = useState<AgentKind>(() =>
+		connectionDefaultAgent(project?.connection),
+	);
+	const agentTouchedRef = useRef(false);
+	const droid = agent === "droid";
 	const cachedModels = projectId ? getCachedProjectPiModels(projectId) : null;
 	const scopeConfig = useProjectModelScope(tauriPiloClient, projectId ?? "");
 	useEffect(() => {
@@ -150,14 +168,14 @@ export function NewChatLanding({
 	const selectedModelKeyRef = useRef(
 		modelKey(cachedModels?.defaultModel ?? null),
 	);
-	const composerSuggestions = useMemo(
-		() => [
+	const composerSuggestions = useMemo(() => {
+		const suggestions = [
 			...fileSuggestions,
 			...piSessionSuggestions(t),
 			...commandSuggestions,
-		],
-		[commandSuggestions, fileSuggestions, t],
-	);
+		];
+		return droid ? omitSlashSuggestions(suggestions) : suggestions;
+	}, [commandSuggestions, droid, fileSuggestions, t]);
 	const updateDraft = useCallback(
 		(value: string) => {
 			setDraft(value);
@@ -266,6 +284,61 @@ export function NewChatLanding({
 		[applyModelSnapshot, projectId, setModelError, setModelLoadState],
 	);
 
+	const droidConnectionId = project?.connection.id ?? "";
+	const applyDroidCache = useCallback((cache: DroidModelCache) => {
+		setModels(cache.models);
+		// Keep the chosen model, but pick up thinking levels the background
+		// probe found for it.
+		const selected = modelSelectionDirtyRef.current
+			? (cache.models.find(
+					(model) => modelKey(model) === selectedModelKeyRef.current,
+				) ?? null)
+			: cache.current;
+		if (!selected) return;
+		selectedModelKeyRef.current = modelKey(selected);
+		setSelectedModel(selected);
+		if (!thinkingSelectionDirtyRef.current) {
+			setSelectedThinkingLevel(selected.defaultThinkingLevel ?? null);
+		}
+	}, []);
+	useEffect(() => {
+		if (!droid || !droidConnectionId) return;
+		return subscribeDroidModels(droidConnectionId, applyDroidCache);
+	}, [applyDroidCache, droid, droidConnectionId]);
+	// A draft has no Droid process, so the catalog comes from a short probe in
+	// the project's environment; it is cached per connection.
+	const loadDroidCatalog = useCallback(
+		async (force = false) => {
+			if (!projectId || !droidConnectionId) return;
+			const requestId = ++modelRequestRef.current;
+			const hadModels =
+				readDroidModelCache(droidConnectionId).models.length > 0;
+			setModelLoadState("loading");
+			setModelError(null);
+			try {
+				const cache = await loadDroidModels(
+					droidConnectionId,
+					(thinking) => loadProjectDroidModels(projectId, thinking),
+					force,
+				);
+				if (modelRequestRef.current !== requestId) return;
+				applyDroidCache(cache);
+				setModelLoadState("ready");
+			} catch (error) {
+				if (modelRequestRef.current !== requestId) return;
+				setModelError(runtimeErrorMessage(error));
+				setModelLoadState(hadModels ? "ready" : "error");
+			}
+		},
+		[
+			applyDroidCache,
+			droidConnectionId,
+			projectId,
+			setModelError,
+			setModelLoadState,
+		],
+	);
+
 	/* oxlint-disable react/set-state-in-effect -- Changing project identity intentionally resets the draft run configuration to that project's cached Pi defaults. */
 	useEffect(() => {
 		modelSelectionDirtyRef.current = false;
@@ -288,8 +361,46 @@ export function NewChatLanding({
 	}, [projectId, readProjectDraft]);
 	/* oxlint-enable react/set-state-in-effect */
 
+	/* oxlint-disable react/set-state-in-effect, react/exhaustive-effect-dependencies, react-hooks/exhaustive-deps -- projectId clears a manual picker choice; an untouched draft then follows the connection default. The connection object identity is not a dependency because project refreshes must not snap a chosen agent back. */
+	useEffect(() => {
+		agentTouchedRef.current = false;
+	}, [projectId]);
+	useEffect(() => {
+		if (agentTouchedRef.current) return;
+		setAgent(connectionDefaultAgent(project?.connection));
+	}, [project?.connection.defaultAgent, projectId]);
+	/* oxlint-enable react/set-state-in-effect, react/exhaustive-effect-dependencies, react-hooks/exhaustive-deps */
+
+	/* oxlint-disable react/set-state-in-effect -- Switching the draft agent replaces the Pi catalog with the Droid models already loaded on this connection. */
 	useEffect(() => {
 		if (!projectId) return;
+		modelSelectionDirtyRef.current = false;
+		thinkingSelectionDirtyRef.current = false;
+		if (droid) {
+			const cached = readDroidModelCache(project?.connection.id ?? "");
+			setModelCatalog(null);
+			setModels(cached.models);
+			selectedModelKeyRef.current = modelKey(cached.current);
+			setSelectedModel(cached.current);
+			setSelectedThinkingLevel(cached.current?.defaultThinkingLevel ?? null);
+			setModelLoadState(cached.models.length > 0 ? "ready" : "idle");
+			setModelError(null);
+			void loadDroidCatalog();
+			return;
+		}
+		const cached = getCachedProjectPiModels(projectId);
+		setModelCatalog(cached);
+		setModels(cached?.models ?? []);
+		selectedModelKeyRef.current = modelKey(cached?.defaultModel ?? null);
+		setSelectedModel(cached?.defaultModel ?? null);
+		setSelectedThinkingLevel(cached?.defaultThinkingLevel ?? null);
+		setModelLoadState(cached ? "ready" : "idle");
+		setModelError(null);
+	}, [droid, loadDroidCatalog, project?.connection.id, projectId]);
+	/* oxlint-enable react/set-state-in-effect */
+
+	useEffect(() => {
+		if (!projectId || droid) return;
 		let disposed = false;
 		const unsubscribe = subscribeProjectPiModels(projectId, applyModelSnapshot);
 		void hydrateProjectPiModels()
@@ -312,7 +423,7 @@ export function NewChatLanding({
 			modelRequestRef.current += 1;
 			modelLoadingRef.current = false;
 		};
-	}, [applyModelSnapshot, loadModels, projectId]);
+	}, [applyModelSnapshot, droid, loadModels, projectId]);
 
 	const selectDraftModel = (
 		model: PiModel,
@@ -342,7 +453,10 @@ export function NewChatLanding({
 		},
 		{
 			enabled:
-				Boolean(project) && projectAvailable && modelLoadState !== "loading",
+				!droid &&
+				Boolean(project) &&
+				projectAvailable &&
+				modelLoadState !== "loading",
 		},
 	);
 
@@ -374,7 +488,10 @@ export function NewChatLanding({
 		},
 		{
 			enabled:
-				Boolean(project) && projectAvailable && modelLoadState !== "loading",
+				!droid &&
+				Boolean(project) &&
+				projectAvailable &&
+				modelLoadState !== "loading",
 		},
 	);
 
@@ -395,10 +512,25 @@ export function NewChatLanding({
 				}
 			}
 
-			onStartSession(submission, selectedModel, selectedThinkingLevel);
+			onStartSession(
+				submission,
+				droid
+					? modelSelectionDirtyRef.current
+						? selectedModel
+						: null
+					: selectedModel,
+				droid
+					? thinkingSelectionDirtyRef.current
+						? selectedThinkingLevel
+						: null
+					: selectedThinkingLevel,
+				agent,
+			);
 			updateDraft("");
 		},
 		[
+			agent,
+			droid,
 			onNewChat,
 			onStartSession,
 			selectedModel,
@@ -438,32 +570,52 @@ export function NewChatLanding({
 								projects={projects}
 								project={project}
 								onSwitchProject={onSwitchProject}
+								trailing={
+									<AgentPicker
+										agent={agent}
+										onChange={(next) => {
+											agentTouchedRef.current = true;
+											setAgent(next);
+										}}
+									/>
+								}
 							/>
 							<ChatComposer
+								piControls={!droid}
+								modelControls
+								showThinking
 								value={draft}
 								historyKey={projectId}
 								onUploadFile={
-									projectId
-										? (file) => uploadChatFile(projectId, file)
-										: undefined
+									droid || !projectId
+										? undefined
+										: (file) => uploadChatFile(projectId, file)
 								}
 								onChange={updateDraft}
 								onSubmit={handleSubmit}
 								disabled={false}
 								models={models}
-								modelScope={{
-									...scopeConfig,
-									models: scopeModels,
-									availableModels,
-									catalogReady,
-								}}
-								canEditScope={projectAvailable && Boolean(project)}
+								modelScope={
+									droid
+										? undefined
+										: {
+												...scopeConfig,
+												models: scopeModels,
+												availableModels,
+												catalogReady,
+											}
+								}
+								canEditScope={!droid && projectAvailable && Boolean(project)}
 								selectedModel={selectedModel}
 								modelLoading={modelLoadState === "loading"}
 								modelError={modelError}
 								modelDisabled={!projectAvailable || !project}
-								onModelMenuOpen={() => void loadModels()}
-								onModelRefresh={() => void loadModels(true)}
+								onModelMenuOpen={() => {
+									void (droid ? loadDroidCatalog() : loadModels());
+								}}
+								onModelRefresh={() => {
+									void (droid ? loadDroidCatalog(true) : loadModels(true));
+								}}
 								onModelChange={(model) => {
 									if (model) selectDraftModel(model);
 								}}

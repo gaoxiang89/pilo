@@ -4,7 +4,7 @@ use pilo_protocol::MAX_BINARY_PAYLOAD_BYTES;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::agent_dir;
+use super::{agent_dir, factory_sessions_dir};
 use crate::to_value;
 
 #[derive(Deserialize)]
@@ -25,21 +25,48 @@ const fn default_session_read_limit() -> usize {
     8 * 1024 * 1024
 }
 
+fn session_roots() -> Result<Vec<PathBuf>, String> {
+    let mut roots = Vec::new();
+    if let Some(root) = agent_dir().map(|root| root.join("sessions"))
+        && let Ok(canonical) = root.canonicalize()
+    {
+        roots.push(canonical);
+    }
+    if let Some(root) = factory_sessions_dir()
+        && let Ok(canonical) = root.canonicalize()
+    {
+        roots.push(canonical);
+    }
+    if roots.is_empty() {
+        return Err("session directory is unavailable".to_owned());
+    }
+    Ok(roots)
+}
+
 fn checked_session_file(path: &str) -> Result<PathBuf, String> {
     let requested = PathBuf::from(path);
-    if requested.extension().and_then(|value| value.to_str()) != Some("jsonl") {
+    // Droid keeps the session's model and reasoning effort in a sidecar
+    // `<id>.settings.json`; the JSONL itself does not record them.
+    let droid_settings = requested
+        .file_name()
+        .and_then(|value| value.to_str())
+        .is_some_and(|name| name.ends_with(".settings.json"));
+    if !droid_settings && requested.extension().and_then(|value| value.to_str()) != Some("jsonl") {
         return Err("session path must point to a JSONL file".to_owned());
     }
-    let sessions_root = agent_dir()
-        .map(|root| root.join("sessions"))
-        .ok_or_else(|| "Pi agent directory is unavailable".to_owned())?
-        .canonicalize()
-        .map_err(|error| format!("Pi session directory is not accessible: {error}"))?;
+    let roots = if droid_settings {
+        factory_sessions_dir()
+            .and_then(|root| root.canonicalize().ok())
+            .into_iter()
+            .collect()
+    } else {
+        session_roots()?
+    };
     let canonical = requested
         .canonicalize()
         .map_err(|error| format!("session file '{path}' is not accessible: {error}"))?;
-    if !canonical.starts_with(&sessions_root) {
-        return Err("session path must stay inside the Pi session directory".to_owned());
+    if !roots.iter().any(|root| canonical.starts_with(root)) {
+        return Err("session path must stay inside a Pi or Droid session directory".to_owned());
     }
     Ok(canonical)
 }
@@ -81,6 +108,9 @@ pub(crate) fn session_read(params: SessionReadParams) -> Result<(Value, Vec<u8>)
 /// Delete a Pi session using the same policy as Pi's interactive session selector:
 /// prefer the optional `trash` CLI, then fall back to permanent file removal.
 pub(crate) fn session_delete(params: SessionDeleteParams) -> Result<Value, String> {
+    if !params.path.ends_with(".jsonl") {
+        return Err("session path must point to a JSONL file".to_owned());
+    }
     let path = checked_session_file(&params.path)?;
     let mut trash = Command::new("trash");
     if params.path.starts_with('-') {

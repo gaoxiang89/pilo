@@ -133,6 +133,32 @@ pub(crate) async fn environment_pi_probe(
     to_value(probe_pi_executable(state, params.executable.as_deref()).await?)
 }
 
+pub(crate) async fn environment_droid_probe(
+    state: &ServerState,
+    params: PiProbeParams,
+) -> Result<Value, String> {
+    let path = cached_login_path(state).await;
+    // Probe exactly what a session would launch, so an empty field reports the
+    // dk shim (or `dk run <droid>`) instead of only a bare `droid`.
+    let launch = resolve_droid_launch(&path, params.executable.as_deref());
+    if !Path::new(&launch.program).is_file() {
+        return to_value(PiExecutableInfo {
+            executable: String::new(),
+            version: String::new(),
+        });
+    }
+    let mut args = launch.prefix.iter().map(String::as_str).collect::<Vec<_>>();
+    args.push("--version");
+    let version = command_text(&launch.program, &args, None, &path)
+        .await
+        .unwrap_or_default();
+    let executable = launch.program;
+    to_value(PiExecutableInfo {
+        executable,
+        version,
+    })
+}
+
 async fn probe_pi_executable(
     state: &ServerState,
     requested: Option<&str>,
@@ -308,6 +334,56 @@ pub(crate) fn resolve_program(path: &str, program: &str) -> String {
     find_command(path, program).unwrap_or_else(|| program.to_owned())
 }
 
+/// Program and leading arguments used to start Droid.
+///
+/// `prefix` is empty when `program` is the CLI itself (`droid` or the
+/// `droid-dk` drop-in). `dk run <droid>` carries the native CLI path in
+/// `prefix` so dk can inject its managed key.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct DroidLaunch {
+    pub(crate) program: String,
+    pub(crate) prefix: Vec<String>,
+}
+
+/// Resolve the Droid process for a connection PATH.
+///
+/// An explicit override is launched as-is, including the name `droid`, which
+/// opts out of dk. Otherwise dk 1.1.0's `droid-dk` shim is the program: it is
+/// the GUI entry (`dk run droid` with the caller's arguments) and does not
+/// require a separate `droid` file on PATH. If the shim is absent but both
+/// `dk` and `droid` are present, launch `dk run <droid>`. Anything else uses
+/// the native `droid` CLI. Pilo does not read `FACTORY_API_KEY`.
+pub(crate) fn resolve_droid_launch(path: &str, override_executable: Option<&str>) -> DroidLaunch {
+    if let Some(requested) = override_executable
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return DroidLaunch {
+            program: resolve_program(path, requested),
+            prefix: Vec::new(),
+        };
+    }
+    if let Some(shim) = find_command(path, "droid-dk") {
+        return DroidLaunch {
+            program: shim,
+            prefix: Vec::new(),
+        };
+    }
+    let droid = find_command(path, "droid");
+    if let Some(droid) = droid.as_deref()
+        && let Some(dk) = find_command(path, "dk")
+    {
+        return DroidLaunch {
+            program: dk,
+            prefix: vec!["run".to_owned(), droid.to_owned()],
+        };
+    }
+    DroidLaunch {
+        program: droid.unwrap_or_else(|| "droid".to_owned()),
+        prefix: Vec::new(),
+    }
+}
+
 pub(crate) fn process_command(program: &str, args: &[String], path: &str) -> Command {
     let mut command = Command::new(program);
     command.args(args).env("PATH", path);
@@ -401,4 +477,118 @@ fn command_output_text(stdout: &[u8], stderr: &[u8], success: bool) -> Result<St
     }
     let text = if stdout.is_empty() { stderr } else { stdout };
     Ok(String::from_utf8_lossy(text).trim().to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::resolve_droid_launch;
+
+    fn path_text(path: &std::path::Path) -> String {
+        path.to_string_lossy().into_owned()
+    }
+
+    struct PathFixture {
+        dir: PathBuf,
+        path: String,
+    }
+
+    impl PathFixture {
+        fn new() -> Self {
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos();
+            let dir = std::env::temp_dir().join(format!("pilo-droid-launch-{nanos}"));
+            fs::create_dir_all(&dir).expect("temp dir");
+            let path = std::env::join_paths([&dir])
+                .expect("path")
+                .to_string_lossy()
+                .into_owned();
+            Self { dir, path }
+        }
+
+        fn add(&self, name: &str) -> PathBuf {
+            let file = self.dir.join(name);
+            fs::write(&file, b"#!/bin/sh\n").expect("write command");
+            file
+        }
+    }
+
+    impl Drop for PathFixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    #[test]
+    fn droid_dk_shim_wins_when_dk_and_the_native_cli_are_also_installed() {
+        let fixture = PathFixture::new();
+        fixture.add("droid");
+        fixture.add("dk");
+        let shim = fixture.add("droid-dk");
+        let launch = resolve_droid_launch(&fixture.path, None);
+        assert_eq!(launch.program, path_text(&shim));
+        assert!(launch.prefix.is_empty());
+    }
+
+    #[test]
+    fn droid_dk_shim_does_not_require_a_native_cli_file() {
+        let fixture = PathFixture::new();
+        let shim = fixture.add("droid-dk");
+        let launch = resolve_droid_launch(&fixture.path, None);
+        assert_eq!(launch.program, path_text(&shim));
+        assert!(launch.prefix.is_empty());
+    }
+
+    #[test]
+    fn dk_runs_the_native_cli_when_the_shim_is_absent() {
+        let fixture = PathFixture::new();
+        let droid = fixture.add("droid");
+        let dk = fixture.add("dk");
+        let launch = resolve_droid_launch(&fixture.path, None);
+        assert_eq!(launch.program, path_text(&dk));
+        assert_eq!(launch.prefix, vec!["run".to_owned(), path_text(&droid)]);
+    }
+
+    #[test]
+    fn droid_dk_shim_is_used_when_the_dk_command_is_absent() {
+        let fixture = PathFixture::new();
+        fixture.add("droid");
+        let shim = fixture.add("droid-dk");
+        let launch = resolve_droid_launch(&fixture.path, None);
+        assert_eq!(launch.program, path_text(&shim));
+        assert!(launch.prefix.is_empty());
+    }
+
+    #[test]
+    fn native_droid_is_used_when_dk_is_not_installed() {
+        let fixture = PathFixture::new();
+        let droid = fixture.add("droid");
+        let launch = resolve_droid_launch(&fixture.path, Some("  "));
+        assert_eq!(launch.program, path_text(&droid));
+        assert!(launch.prefix.is_empty());
+    }
+
+    #[test]
+    fn explicit_droid_override_skips_dk() {
+        let fixture = PathFixture::new();
+        let droid = fixture.add("droid");
+        fixture.add("dk");
+        let launch = resolve_droid_launch(&fixture.path, Some("droid"));
+        assert_eq!(launch.program, path_text(&droid));
+        assert!(launch.prefix.is_empty());
+    }
+
+    #[test]
+    fn dk_without_a_shim_or_native_cli_does_not_invent_a_launcher() {
+        let fixture = PathFixture::new();
+        fixture.add("dk");
+        let launch = resolve_droid_launch(&fixture.path, None);
+        assert_eq!(launch.program, "droid");
+        assert!(launch.prefix.is_empty());
+    }
 }

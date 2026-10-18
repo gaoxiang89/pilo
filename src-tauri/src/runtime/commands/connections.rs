@@ -99,6 +99,8 @@ pub fn connection_settings_update(
     id: String,
     name: String,
     pi_executable: Option<String>,
+    default_agent: Option<String>,
+    droid_executable: Option<String>,
 ) -> Result<Connection, String> {
     let id = id.trim();
     let name = name.trim();
@@ -116,6 +118,15 @@ pub fn connection_settings_update(
     connection.pi_executable = pi_executable
         .map(|value| value.trim().to_owned())
         .filter(|value| !value.is_empty());
+    if let Some(agent) = default_agent {
+        connection.default_agent = crate::domain::AgentKind::parse(agent.trim())?;
+    }
+    if let Some(executable) = droid_executable {
+        connection.droid_executable = {
+            let executable = executable.trim();
+            (!executable.is_empty()).then(|| executable.to_owned())
+        };
+    }
     storage::upsert_connection(&db, &connection)?;
     Ok(connection)
 }
@@ -139,6 +150,30 @@ pub async fn connection_pi_probe(
         .request_typed(
             &connection,
             "environment.pi_probe",
+            serde_json::json!({ "executable": executable }),
+        )
+        .await
+}
+
+#[tauri::command]
+pub async fn connection_droid_probe(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    id: String,
+    executable: Option<String>,
+) -> Result<PiExecutableInfo, String> {
+    let db = storage::open(&app)?;
+    let connection = if id == "local" {
+        storage::ensure_local_connection(&db)?
+    } else {
+        storage::get_connection(&db, &id)?
+            .ok_or_else(|| format!("Connection '{id}' was not found"))?
+    };
+    runtime
+        .servers
+        .request_typed(
+            &connection,
+            "environment.droid_probe",
             serde_json::json!({ "executable": executable }),
         )
         .await
@@ -262,6 +297,8 @@ pub async fn local_connection_test(
         pi_runtime: crate::domain::PiRuntime::default(),
         kind: ConnectionKind::Local,
         shown_in_home: true,
+        default_agent: crate::domain::AgentKind::Pi,
+        droid_executable: None,
     };
     connection_test_result(runtime.servers.test_connection(&connection).await?)
 }

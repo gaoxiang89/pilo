@@ -48,6 +48,17 @@ pub fn project_model_scope_set(
 }
 
 #[tauri::command]
+pub async fn project_droid_models(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    project_id: String,
+    thinking: Option<bool>,
+) -> Result<serde_json::Value, String> {
+    let project = project::get(&app, &project_id)?;
+    project::droid_models(&runtime.servers, &project, thinking.unwrap_or(false)).await
+}
+
+#[tauri::command]
 pub fn project_model_cache_list(app: AppHandle) -> Result<Vec<ProjectModelCache>, String> {
     storage::list_project_model_cache(&storage::open(&app)?)
 }

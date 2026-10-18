@@ -1,5 +1,41 @@
 use serde::{Deserialize, Serialize};
 
+/// 会话使用的编码代理。连接只记住新建会话的默认值，已打开的会话保持创建时的选择。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentKind {
+    #[default]
+    Pi,
+    Droid,
+}
+
+impl AgentKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Pi => "pi",
+            Self::Droid => "droid",
+        }
+    }
+
+    pub fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "pi" => Ok(Self::Pi),
+            "droid" => Ok(Self::Droid),
+            _ => Err(format!("unknown agent '{value}'")),
+        }
+    }
+
+    /// Factory 会话文件位于 `~/.factory/sessions`。路径即可区分，避免给每个扫描结果再加一列。
+    pub fn from_session_path(path: &str) -> Self {
+        let normalized = path.replace('\\', "/");
+        if normalized.contains("/.factory/sessions/") || normalized.contains("/.factory/sessions") {
+            Self::Droid
+        } else {
+            Self::Pi
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Connection {
@@ -16,6 +52,11 @@ pub struct Connection {
     /// 是否在首页（侧边栏环境列表）显示该连接。桌面端设置与 WebUI 共用这一偏好。
     #[serde(default)]
     pub shown_in_home: bool,
+    /// 该连接上新建会话的默认代理。已有连接缺省为 Pi。
+    #[serde(default)]
+    pub default_agent: AgentKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub droid_executable: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

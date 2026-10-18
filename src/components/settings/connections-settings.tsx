@@ -7,6 +7,7 @@ import { userErrorMessage } from "@/lib/app-error";
 import {
 	getLocalConnection,
 	listWslConnections,
+	probeConnectionDroid,
 	probeConnectionPi,
 	removeWslConnection,
 	saveWslConnection,
@@ -17,6 +18,7 @@ import {
 	type ConnectionTestResult,
 	type WslConnectionInfo,
 } from "@/lib/api/connections";
+import { connectionDefaultAgent } from "@/lib/agent";
 import type { Connection } from "@/lib/api/pi-runtime";
 import {
 	connectionLabel,
@@ -86,6 +88,7 @@ export function ConnectionsSettings() {
 	const [connectionSettings, setConnectionSettings] =
 		useState<ConnectionSettingsDraft | null>(null);
 	const [probingPi, setProbingPi] = useState(false);
+	const [probingDroid, setProbingDroid] = useState(false);
 	const [testingSsh, setTestingSsh] = useState(false);
 	const [wslPickerOpen, setWslPickerOpen] = useState(false);
 	const [removingConnection, setRemovingConnection] =
@@ -161,6 +164,8 @@ export function ConnectionsSettings() {
 			connection,
 			name: connection.name,
 			piExecutable: connection.piExecutable ?? "",
+			defaultAgent: connectionDefaultAgent(connection),
+			droidExecutable: connection.droidExecutable ?? "",
 		});
 	};
 
@@ -196,6 +201,51 @@ export function ConnectionsSettings() {
 		}
 	};
 
+	const probeDroid = async (
+		connection: Connection,
+		executable?: string | null,
+	) => {
+		setProbingDroid(true);
+		try {
+			const result = await probeConnectionDroid(connection.id, executable);
+			if (!result.executable) {
+				toast.error(
+					t("connection.droidUnavailable", {
+						name: connectionLabel(connection),
+					}),
+				);
+				return;
+			}
+			// An empty field means "dk if it is on PATH, otherwise droid".
+			// Writing the detected CLI path here would save an override and
+			// skip that resolution on the next launch.
+			if (executable?.trim()) {
+				setConnectionSettings((current) =>
+					current?.connection.id === connection.id
+						? { ...current, droidExecutable: result.executable }
+						: current,
+				);
+			}
+			toast.success(
+				t("connection.droidAvailable", { name: connectionLabel(connection) }),
+				{
+					description: [result.executable, result.version]
+						.filter(Boolean)
+						.join(" · "),
+				},
+			);
+		} catch (error) {
+			toast.error(
+				t("connection.droidUnavailable", { name: connectionLabel(connection) }),
+				{
+					description: userErrorMessage(error),
+				},
+			);
+		} finally {
+			setProbingDroid(false);
+		}
+	};
+
 	const saveConnectionSettings = async () => {
 		const draft = connectionSettings;
 		if (!draft?.name.trim()) return;
@@ -205,6 +255,10 @@ export function ConnectionsSettings() {
 				draft.connection.id,
 				draft.name.trim(),
 				draft.piExecutable.trim() || null,
+				{
+					defaultAgent: draft.defaultAgent,
+					droidExecutable: draft.droidExecutable.trim(),
+				},
 			);
 			setConnectionSettings(null);
 			await refresh();
@@ -419,12 +473,19 @@ export function ConnectionsSettings() {
 				draft={connectionSettings}
 				busy={busy}
 				probing={probingPi}
+				probingDroid={probingDroid}
 				onChange={setConnectionSettings}
 				onClose={() => setConnectionSettings(null)}
 				onProbe={() => {
 					const draft = connectionSettings;
 					if (draft) {
 						void probePi(draft.connection, draft.piExecutable || null);
+					}
+				}}
+				onProbeDroid={() => {
+					const draft = connectionSettings;
+					if (draft) {
+						void probeDroid(draft.connection, draft.droidExecutable || null);
 					}
 				}}
 				onSave={() => void saveConnectionSettings()}

@@ -26,6 +26,7 @@ This directory contains guidelines for backend development in this project (Taur
 | [Desktop Startup & Tray](./desktop-lifecycle.md) | Login startup, native tray, Dock/taskbar visibility, exit | Filled |
 | [Runtime Resource Lifecycle](./runtime-lifecycle.md) | Idle Pi retention, byte-bounded queues, graceful server cleanup | Filled |
 | [Session History Cache](./history-cache.md) | Fingerprinted memory/disk windows, load deduplication, lazy images | Filled |
+| [Factory Droid Runtime](./droid-runtime.md) | Session-level Droid process, Factory JSONL history, Pi event translation | Filled |
 
 ---
 

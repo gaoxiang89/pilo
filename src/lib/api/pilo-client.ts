@@ -1,3 +1,4 @@
+import type { AgentKind } from "@/lib/agent";
 import type { ThemeSettings, ThemeSettingsUpdate } from "@/lib/theme-settings";
 import type { CacheKeepAliveSettings } from "@/lib/cache-keep-alive";
 import type {
@@ -8,6 +9,7 @@ import type {
 import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-client";
 import type { PiSessionSnapshot, PiloRuntimeEvent } from "@/lib/api/pi-runtime";
 import type { ProjectPiModels } from "@/lib/api/pi-models";
+import type { DroidModelCatalog } from "@/lib/droid-models";
 import type { Project } from "@/lib/api/projects";
 import type { SessionReadState } from "@/lib/session-read-state";
 import type {
@@ -34,6 +36,8 @@ export type PiloClientStartChatInput = {
 	sessionPath?: string;
 	noSession?: boolean;
 	builtinExtensions?: { id: "model-catalog" }[];
+	/** 省略时服务端按 Pi 启动。模型目录探测不要传 droid。 */
+	agent?: AgentKind;
 };
 
 export type PiloClientHistoryOptions = {
@@ -97,6 +101,11 @@ export interface PiloClient {
 	): Promise<SessionDeleteResult>;
 	/** Host-cached Pi model catalog snapshot; null when the project has none. */
 	loadModels(projectId: string): Promise<ProjectPiModels | null>;
+	/** Droid catalog probe for a draft; it starts a short-lived Droid process. */
+	loadDroidModels(
+		projectId: string,
+		thinking?: boolean,
+	): Promise<DroidModelCatalog>;
 	loadModelScope(projectId: string): Promise<ProjectModelScope>;
 	saveModelScope(
 		projectId: string,

@@ -139,6 +139,7 @@ pub(crate) fn router(
             "/api/v1/models",
             get(handlers::models).post(handlers::models_set),
         )
+        .route("/api/v1/models/droid", get(handlers::droid_models))
         .route(
             "/api/v1/models/scope",
             get(handlers::model_scope_get).post(handlers::model_scope_set),

@@ -1,3 +1,4 @@
+import type { AgentKind } from "@/lib/agent";
 import type { CacheKeepAliveSettings } from "@/lib/cache-keep-alive";
 import type { NextPromptSettings } from "../next-prompt";
 import type { ProjectModelScope } from "../project-model-scope";
@@ -50,6 +51,9 @@ export type Connection = {
 	kind: ConnectionKind;
 	/** 是否在首页（侧边栏环境列表）显示该连接。偏好存于主机，桌面端与 WebUI 共用。 */
 	shownInHome?: boolean;
+	/** 该连接上新建会话的默认代理。缺省为 Pi。 */
+	defaultAgent?: AgentKind;
+	droidExecutable?: string | null;
 };
 
 export type PiPromptResult = {

@@ -18,6 +18,8 @@ import {
 } from "@/components/chat/chat-page-utils";
 import type { createChatSessionClient } from "@/lib/api/chat-session-client";
 import { getCachedProjectPiModels } from "@/lib/api/pi-models";
+import { resolveSessionAgent } from "@/lib/agent";
+import { readDroidModelCache } from "@/lib/droid-models";
 import {
 	findMatchingPiModel,
 	getPiModelThinkingLevels,
@@ -66,8 +68,12 @@ export function useChatSessionState({
 	const applyHistoryMetadata = useCallback(
 		(result: SessionHistory) => {
 			setSessionHeaderMissing(result.headerMissing ?? false);
+			// Droid models carry their thinking levels in the connection's Droid
+			// catalog, not in the Pi project catalog.
 			const cachedModels =
-				getCachedProjectPiModels(session.projectRecord.id)?.models ?? [];
+				resolveSessionAgent(session) === "droid"
+					? readDroidModelCache(session.projectRecord.connection.id).models
+					: (getCachedProjectPiModels(session.projectRecord.id)?.models ?? []);
 			let historicalModel: PiModel | null = null;
 			if (result.model) {
 				historicalModel = findMatchingPiModel(cachedModels, result.model) ?? {
@@ -95,12 +101,7 @@ export function useChatSessionState({
 				contextTokens: stats?.contextTokens,
 			}));
 		},
-		[
-			session.projectRecord.id,
-			setSelectedModel,
-			setSelectedThinkingLevel,
-			setThinkingLevels,
-		],
+		[session, setSelectedModel, setSelectedThinkingLevel, setThinkingLevels],
 	);
 
 	const refreshSessionState = useCallback(

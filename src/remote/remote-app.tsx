@@ -24,6 +24,7 @@ import { PiExtensionNotifications } from "@/components/chat/pi-extension-notific
 import { PiExtensionUiDialog } from "@/components/chat/pi-extension-ui-dialog";
 import { ChatPendingQueue } from "@/components/chat/chat-pending-queue";
 import { useScrollbarGutterWidth } from "@/components/chat/use-scrollbar-gutter";
+import { AgentPicker } from "@/components/chat/agent-picker";
 import { DraftProjectPicker } from "@/components/chat/draft-project-picker";
 import { SessionHeader } from "@/components/chat/chat-session-header";
 import {
@@ -234,12 +235,12 @@ function RemoteWorkspace() {
 		handleMessage: handleCacheKeepAliveMessage,
 	} = useCacheKeepAliveStatus({
 		client: connection.client,
-		sessionKey: chat.activeSessionKey,
+		sessionKey: chat.droid ? null : chat.activeSessionKey,
 		refreshKey: `${connection.resyncKey}:${connection.snapshotRefreshKey}`,
 	});
 	const nextPrompt = useNextPrompt({
-		client: connection.client,
-		connectionId: chat.activeProject?.connection.id ?? "",
+		client: chat.droid ? null : connection.client,
+		connectionId: chat.droid ? "" : (chat.activeProject?.connection.id ?? ""),
 		sessionKey: chat.activeSessionKey,
 		sessionId: chat.identifiedSessionId ?? null,
 		draft: chat.composer,
@@ -463,7 +464,7 @@ function RemoteWorkspace() {
 											onVisualReady={chat.handleVisualReady}
 											onRetryHistory={chat.retryHistory}
 											onForkAssistant={
-												chat.selectedSession
+												chat.selectedSession && !chat.droid
 													? chat.handleForkAssistant
 													: undefined
 											}
@@ -507,6 +508,12 @@ function RemoteWorkspace() {
 												projects={homeProjects}
 												project={chat.activeProject}
 												onSwitchProject={chat.switchDraftProject}
+												trailing={
+													<AgentPicker
+														agent={chat.agent}
+														onChange={chat.selectDraftAgent}
+													/>
+												}
 											/>
 										) : null}
 										{chat.extensionDialog ? (
@@ -517,12 +524,17 @@ function RemoteWorkspace() {
 												}
 											/>
 										) : null}
-										<CacheKeepAliveNotice
-											key={chat.activeSessionKey}
-											status={cacheKeepAliveStatus}
-										/>
+										{chat.droid ? null : (
+											<CacheKeepAliveNotice
+												key={chat.activeSessionKey}
+												status={cacheKeepAliveStatus}
+											/>
+										)}
 										<ChatComposer
-											nextPrompt={nextPrompt.text}
+											piControls={!chat.droid}
+											modelControls
+											showThinking
+											nextPrompt={chat.droid ? null : nextPrompt.text}
 											onNextPromptDismiss={nextPrompt.dismiss}
 											value={chat.readOnly ? "" : chat.composer}
 											onChange={chat.handleComposerChange}
@@ -537,37 +549,41 @@ function RemoteWorkspace() {
 											desktopShortcuts={false}
 											historyKey={chat.activeProjectId || null}
 											attachmentScopeKey={chat.activeSessionKey}
-											onUploadFile={
-												client && chat.activeProjectId
-													? async (file) => {
-															try {
-																return await client.uploadChatFile(
-																	chat.activeProjectId,
-																	file,
-																);
-															} catch (error) {
-																handleExpiredAuth(error);
-																throw error;
-															}
-														}
-													: undefined
-											}
 											suggestions={chat.composerSuggestions}
 											onSuggestionTrigger={chat.handleSuggestionTrigger}
-											images={chat.images}
-											onImagesChange={chat.setImages}
+											images={chat.droid ? [] : chat.images}
+											onImagesChange={chat.droid ? undefined : chat.setImages}
+											onUploadFile={
+												chat.droid
+													? undefined
+													: client && chat.activeProjectId
+														? async (file) => {
+																try {
+																	return await client.uploadChatFile(
+																		chat.activeProjectId,
+																		file,
+																	);
+																} catch (error) {
+																	handleExpiredAuth(error);
+																	throw error;
+																}
+															}
+														: undefined
+											}
 											onSubmit={(submission) =>
 												void chat.sendSubmission(submission, "prompt")
 											}
 											onSteer={
-												active
+												active && !chat.droid
 													? (submission) =>
 															void chat.sendSubmission(submission, "steer")
 													: undefined
 											}
-											onSendNow={active ? chat.handleSendNow : undefined}
+											onSendNow={
+												active && !chat.droid ? chat.handleSendNow : undefined
+											}
 											onFollowUp={
-												active
+												active && !chat.droid
 													? (submission) =>
 															void chat.sendSubmission(submission, "follow_up")
 													: undefined
@@ -598,8 +614,8 @@ function RemoteWorkspace() {
 											onAbortRetry={() => void chat.abortPiRetry()}
 											contextUsage={chat.chatState}
 											models={chat.models}
-											modelScope={chat.modelScope}
-											canEditScope={!isNarrow}
+											modelScope={chat.droid ? undefined : chat.modelScope}
+											canEditScope={!chat.droid && !isNarrow}
 											selectedModel={chat.selectedModel}
 											modelLoading={chat.modelLoading}
 											modelError={chat.modelError ?? fatalError}
@@ -609,6 +625,10 @@ function RemoteWorkspace() {
 												!chat.activeProjectId
 											}
 											onModelMenuOpen={() => {
+												if (chat.droid && chat.hasIdentifiedSession) {
+													void chat.refreshAgentConfig(true);
+													return;
+												}
 												if (chat.hasIdentifiedSession)
 													void chat.refreshAgentConfig(
 														chat.runtimeReady && !chat.readOnly,
@@ -617,6 +637,10 @@ function RemoteWorkspace() {
 													void chat.loadDraftCatalog(chat.activeProjectId);
 											}}
 											onModelRefresh={() => {
+												if (chat.droid && chat.hasIdentifiedSession) {
+													void chat.refreshAgentConfig(true);
+													return;
+												}
 												if (chat.activeProjectId)
 													void chat.loadDraftCatalog(
 														chat.activeProjectId,

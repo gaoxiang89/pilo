@@ -15,20 +15,20 @@ pub use appearance::{system_font_families, theme_settings_get, theme_settings_se
 pub use cache_keep_alive::{cache_keep_alive_settings_list, cache_keep_alive_settings_set};
 
 pub use connections::{
-    connection_health_get, connection_naming_model_get, connection_naming_model_list,
-    connection_naming_model_set, connection_pi_probe, connection_settings_update,
-    connection_shown_in_home_set, local_connection_get, local_connection_test, ssh_connection_list,
-    ssh_connection_password_get, ssh_connection_remove, ssh_connection_save, ssh_connection_test,
-    ssh_connection_test_draft, wsl_connection_list, wsl_connection_remove, wsl_connection_save,
-    wsl_connection_test, wsl_list_distributions,
+    connection_droid_probe, connection_health_get, connection_naming_model_get,
+    connection_naming_model_list, connection_naming_model_set, connection_pi_probe,
+    connection_settings_update, connection_shown_in_home_set, local_connection_get,
+    local_connection_test, ssh_connection_list, ssh_connection_password_get, ssh_connection_remove,
+    ssh_connection_save, ssh_connection_test, ssh_connection_test_draft, wsl_connection_list,
+    wsl_connection_remove, wsl_connection_save, wsl_connection_test, wsl_list_distributions,
 };
 pub use projects::{
     connection_fs_read_dir, local_pick_project_directory, parallel_agent_create,
     parallel_agent_list, parallel_agent_remove, parallel_agent_send, parallel_agent_stop,
     project_add, project_chat_file_remove, project_chat_file_upload, project_discover,
-    project_fs_mkdir, project_fs_read_dir, project_fs_read_file, project_fs_read_image,
-    project_fs_remove, project_fs_rename, project_fs_search, project_fs_stat,
-    project_fs_write_file, project_git_diff, project_git_status, project_list,
+    project_droid_models, project_fs_mkdir, project_fs_read_dir, project_fs_read_file,
+    project_fs_read_image, project_fs_remove, project_fs_rename, project_fs_search,
+    project_fs_stat, project_fs_write_file, project_git_diff, project_git_status, project_list,
     project_model_cache_list, project_model_cache_set, project_model_scope_get,
     project_model_scope_set, project_open_in_zed_wsl, project_preview_close, project_preview_open,
     project_preview_ports, project_refresh, project_remove, project_reorder, project_terminal_open,

@@ -460,6 +460,8 @@ mod tests {
                     distro: "Ubuntu".to_owned(),
                 },
                 shown_in_home: false,
+                default_agent: crate::domain::AgentKind::Pi,
+                droid_executable: None,
             },
             metadata: crate::domain::ProjectMetadata {
                 cwd: "/srv/code/repo".to_owned(),

@@ -87,10 +87,20 @@ impl ChatSessions {
                     disable_builtin_tools: process.disable_builtin_tools,
                     disable_extension_discovery: process.disable_extension_discovery,
                     disable_context_files: process.disable_context_files,
+                    agent: process.agent,
                     ..PiLaunchOptions::default()
                 },
             )
             .await;
+        if let Some(path) = session.take_discovered_session_path() {
+            let mut current = process
+                .session_path
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            if current.is_none() {
+                *current = Some(path);
+            }
+        }
         match &result {
             Ok(snapshot) => runtime_trace(
                 "chat.spawn.end",
@@ -234,6 +244,11 @@ impl ChatSessions {
             &session_key,
         )
         .await?;
+        if launch.agent == crate::domain::AgentKind::Droid {
+            process.prepared.store(true, Ordering::Release);
+            process.initialized.store(true, Ordering::Release);
+            return Ok(session.snapshot());
+        }
         if process.prepared.load(Ordering::Acquire) {
             runtime_trace(
                 "chat.prepare.end",
@@ -337,6 +352,11 @@ impl ChatSessions {
             &session_key,
         )
         .await?;
+        if launch.agent == crate::domain::AgentKind::Droid {
+            process.prepared.store(true, Ordering::Release);
+            process.initialized.store(true, Ordering::Release);
+            return Ok(session.snapshot());
+        }
         if process.initialized.load(Ordering::Acquire) {
             runtime_trace(
                 "chat.ensure.end",

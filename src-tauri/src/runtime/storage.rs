@@ -49,6 +49,8 @@ mod tests {
                 distro: "Debian".to_owned(),
             },
             shown_in_home: false,
+            default_agent: crate::domain::AgentKind::Pi,
+            droid_executable: None,
         };
         upsert_connection(&db, &current_connection).expect("persist current connection");
 
@@ -65,6 +67,8 @@ mod tests {
                     distro: "Debian-old".to_owned(),
                 },
                 shown_in_home: false,
+                default_agent: crate::domain::AgentKind::Pi,
+                droid_executable: None,
             },
             metadata: ProjectMetadata {
                 cwd: "/code/demo".to_owned(),

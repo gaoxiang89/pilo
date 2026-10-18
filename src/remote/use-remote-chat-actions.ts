@@ -54,6 +54,7 @@ type UseRemoteChatActionsOptions = {
 	readOnly: boolean;
 	hasSelectedSession: boolean;
 	hasIdentifiedSession: boolean;
+	droid?: boolean;
 	autoTitleRequestedRef: RefObject<boolean>;
 	pendingProjectMcpPromptsRef: RefObject<Map<string, PendingProjectMcpPrompt>>;
 	projectMcpApprovalRequestedRef: RefObject<Set<string>>;
@@ -82,6 +83,7 @@ export function useRemoteChatActions({
 	readOnly,
 	hasSelectedSession,
 	hasIdentifiedSession,
+	droid = false,
 	autoTitleRequestedRef,
 	pendingProjectMcpPromptsRef,
 	projectMcpApprovalRequestedRef,
@@ -714,12 +716,15 @@ export function useRemoteChatActions({
 
 	const changeModel = useCallback(
 		async (model: PiModel) => {
+			// A draft keeps the choice locally; starting the runtime here would
+			// index an empty session. The first prompt applies it.
 			if (!hasIdentifiedSession) {
 				setDraftModel(model);
 				setDraftThinkingLevel(model.defaultThinkingLevel ?? null);
 				return;
 			}
 			if (!activeSessionKey) return;
+			if (!hasIdentifiedSession) setDraftModel(model);
 			const targetSessionKey = activeSessionKey;
 			const isActiveSession = () =>
 				activeSessionKeyRef.current === targetSessionKey;
@@ -731,9 +736,30 @@ export function useRemoteChatActions({
 					provider: model.provider,
 					modelId: model.id,
 				});
+				if (droid) {
+					// Droid swaps the thinking choices and level with the model.
+					const state = await rpcForSession<PiAgentState>(targetSessionKey, {
+						type: "get_state",
+					});
+					if (isActiveSession()) {
+						setDraftModel(next);
+						setAgentState(state);
+					}
+					return;
+				}
 				if (isActiveSession()) {
+					setDraftModel(next);
 					setAgentState((current) =>
-						current ? { ...current, model: next } : current,
+						current
+							? { ...current, model: next }
+							: {
+									model: next,
+									thinkingLevel: "off",
+									isStreaming: false,
+									isCompacting: false,
+									messageCount: 0,
+									pendingMessageCount: 0,
+								},
 					);
 				}
 			} catch (error) {
@@ -744,6 +770,7 @@ export function useRemoteChatActions({
 		[
 			activeSessionKey,
 			activeSessionKeyRef,
+			droid,
 			ensureDraftRuntime,
 			hasIdentifiedSession,
 			rpcForSession,

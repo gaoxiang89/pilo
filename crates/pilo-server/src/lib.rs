@@ -17,7 +17,9 @@ use std::{
 };
 
 use command::command_run;
-use environment::{ToolchainInfo, environment_inspect, environment_pi_probe};
+use environment::{
+    ToolchainInfo, environment_droid_probe, environment_inspect, environment_pi_probe,
+};
 use fs_ops::{
     fs_mkdir, fs_mkdir_absolute, fs_read_dir, fs_read_file, fs_remove, fs_rename, fs_search,
     fs_stat, fs_write_file,
@@ -28,8 +30,9 @@ use pilo_protocol::{
     ServerStatus, read_frame, write_frame,
 };
 use runtime_streams::{
-    PiProcess, TerminalSession, pi_send, pi_start, pi_stop, preview_ports, terminal_close,
-    terminal_open, terminal_resize, terminal_write,
+    PiProcess, TerminalSession, droid_models, droid_send, droid_start, droid_stop, pi_send,
+    pi_start, pi_stop, preview_ports, terminal_close, terminal_open, terminal_resize,
+    terminal_write,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -168,7 +171,7 @@ pub async fn serve_stdio() -> Result<(), Box<dyn std::error::Error>> {
         };
         let slots = if matches!(
             method.as_str(),
-            "pi.stop" | "terminal.close" | "session.watch_stop"
+            "pi.stop" | "droid.stop" | "terminal.close" | "session.watch_stop"
         ) {
             &state.control_slots
         } else {
@@ -193,7 +196,7 @@ pub async fn serve_stdio() -> Result<(), Box<dyn std::error::Error>> {
             }
         };
         // Register starts in input order, before their tasks can await probing.
-        let start_cancel = if method == "pi.start"
+        let start_cancel = if matches!(method.as_str(), "pi.start" | "droid.start")
             && let Some(stream_id) = params.get("streamId").and_then(Value::as_str)
         {
             let (cancel, cancelled) = tokio::sync::oneshot::channel();
@@ -222,7 +225,7 @@ pub async fn serve_stdio() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 operation.await
             };
-            if method == "pi.start" {
+            if matches!(method.as_str(), "pi.start" | "droid.start") {
                 state.pi_starts.lock().await.remove(&id);
             }
             if result.is_err() || started.elapsed().as_secs() >= 5 {
@@ -362,6 +365,9 @@ async fn dispatch(
         "environment.pi_probe" => environment_pi_probe(state, from_params(params)?)
             .await
             .map(ServerReply::json),
+        "environment.droid_probe" => environment_droid_probe(state, from_params(params)?)
+            .await
+            .map(ServerReply::json),
         "command.run" => {
             command_run(state, from_params(params)?, one_binary(binary, method)?).await
         }
@@ -474,6 +480,18 @@ async fn dispatch(
             .await
             .map(ServerReply::json),
         "pi.stop" => pi_stop(state, from_params(params)?)
+            .await
+            .map(ServerReply::json),
+        "droid.start" => droid_start(state, from_params(params)?)
+            .await
+            .map(ServerReply::json),
+        "droid.send" => droid_send(state, from_params(params)?)
+            .await
+            .map(ServerReply::json),
+        "droid.stop" => droid_stop(state, from_params(params)?)
+            .await
+            .map(ServerReply::json),
+        "droid.models" => droid_models(state, from_params(params)?)
             .await
             .map(ServerReply::json),
         _ => Err(format!("unknown pilo-server method '{method}'")),

@@ -16,7 +16,7 @@ use pilo_protocol::BuiltinExtension;
 use serde::Serialize;
 use tokio::sync::{Mutex, oneshot};
 
-use crate::domain::Project;
+use crate::domain::{AgentKind, Project};
 
 use super::{
     events::RuntimeEventBus,
@@ -47,6 +47,7 @@ pub struct ChatSessionLaunch {
     pub disable_builtin_tools: bool,
     pub disable_extension_discovery: bool,
     pub disable_context_files: bool,
+    pub agent: AgentKind,
 }
 
 struct ChatProcess {
@@ -56,6 +57,7 @@ struct ChatProcess {
     disable_builtin_tools: bool,
     disable_extension_discovery: bool,
     disable_context_files: bool,
+    agent: AgentKind,
     session: Mutex<ServerPiSession>,
     session_path: Arc<StdMutex<Option<String>>>,
     control_reply: Arc<StdMutex<Option<InitializationReply>>>,
@@ -228,6 +230,7 @@ impl ChatSessions {
                     disable_builtin_tools: launch.disable_builtin_tools,
                     disable_extension_discovery: launch.disable_extension_discovery,
                     disable_context_files: launch.disable_context_files,
+                    agent: launch.agent,
                     session: Mutex::new(session),
                     session_path: Arc::new(StdMutex::new(session_path.cloned())),
                     control_reply: Arc::new(StdMutex::new(None)),
@@ -253,6 +256,9 @@ impl ChatSessions {
         }
         if process.no_session != launch.no_session {
             return Err("session persistence mode changed while running".to_owned());
+        }
+        if process.agent != launch.agent {
+            return Err("session agent changed while running".to_owned());
         }
         if process.session.lock().await.builtin_extensions() != launch.builtin_extensions.as_slice()
         {

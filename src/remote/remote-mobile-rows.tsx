@@ -87,6 +87,11 @@ export function MobileSessionRow({
 					title={session.title}
 				>
 					{session.title}
+					{session.agent === "droid" ? (
+						<span className="ml-1 shrink-0 text-2xs text-sidebar-foreground-muted">
+							{t("connection.defaultAgentDroid")}
+						</span>
+					) : null}
 				</span>
 				<div className="flex shrink-0 items-center">
 					<Button
@@ -198,6 +203,11 @@ export function MobileSessionRow({
 						title={session.title}
 					>
 						{session.title}
+						{session.agent === "droid" ? (
+							<span className="ml-1 text-2xs font-normal text-sidebar-foreground-muted">
+								{t("connection.defaultAgentDroid")}
+							</span>
+						) : null}
 					</span>
 					{projectName ? (
 						<span className="mt-1 flex items-center gap-1.5 text-xs leading-4 text-sidebar-foreground-muted">

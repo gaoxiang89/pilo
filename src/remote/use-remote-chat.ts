@@ -12,6 +12,12 @@ import { useTranslation } from "react-i18next";
 
 import { chatUiStateKey } from "@/components/app/app-chat-state";
 import {
+	connectionDefaultAgent,
+	omitSlashSuggestions,
+	resolveSessionAgent,
+	type AgentKind,
+} from "@/lib/agent";
+import {
 	createChatUiStateCache,
 	createProjectDraftCache,
 } from "@/components/app/chat-ui-state-cache";
@@ -107,6 +113,8 @@ export function useRemoteChat({
 	const [draftId, setDraftId] = useState(() => randomId());
 	// 草稿态是否为临时会话（noSession）：首条消息发送前不建立持久会话。
 	const [draftTemporary, setDraftTemporary] = useState(false);
+	const [draftAgent, setDraftAgent] = useState<AgentKind>("pi");
+	const draftAgentTouchedRef = useRef(false);
 	const [identifiedDraftSessionId, setIdentifiedDraftSessionId] = useState<
 		string | null
 	>(null);
@@ -234,6 +242,26 @@ export function useRemoteChat({
 		() => projects.find((project) => project.id === activeProjectId) ?? null,
 		[projects, activeProjectId],
 	);
+	const connectionAgent = connectionDefaultAgent(activeProject?.connection);
+	const agent: AgentKind = selectedSession
+		? resolveSessionAgent(selectedSession)
+		: identifiedDraftSession
+			? resolveSessionAgent(identifiedDraftSession)
+			: draftAgent;
+	const droid = agent === "droid";
+	const selectDraftAgent = useCallback((next: AgentKind) => {
+		draftAgentTouchedRef.current = true;
+		setDraftAgent(next);
+	}, []);
+	/* oxlint-disable react/set-state-in-effect, react/exhaustive-effect-dependencies, react-hooks/exhaustive-deps -- draftId clears a manual picker choice; an untouched draft then follows the connection default. */
+	useEffect(() => {
+		draftAgentTouchedRef.current = false;
+	}, [draftId]);
+	useEffect(() => {
+		if (draftAgentTouchedRef.current) return;
+		setDraftAgent(connectionAgent);
+	}, [connectionAgent, draftId]);
+	/* oxlint-enable react/set-state-in-effect, react/exhaustive-effect-dependencies, react-hooks/exhaustive-deps */
 	const hasIdentifiedSession = Boolean(
 		selectedSession || identifiedDraftSessionId,
 	);
@@ -293,6 +321,8 @@ export function useRemoteChat({
 		activeProjectId,
 		draftId,
 		selectedSession,
+		droid,
+		droidConnectionId: activeProject?.connection.id,
 	});
 	const {
 		agentState,
@@ -478,6 +508,7 @@ export function useRemoteChat({
 				sessionKey: activeSessionKey,
 				sessionPath: selectedSession?.sessionPath,
 				noSession: draftTemporary,
+				agent,
 			};
 			const targetSessionKey = activeSessionKey;
 			await client.startChat(input).catch(() => undefined);
@@ -502,6 +533,7 @@ export function useRemoteChat({
 		[
 			activeProjectId,
 			activeSessionKey,
+			agent,
 			client,
 			draftTemporary,
 			selectedSession?.sessionPath,
@@ -652,6 +684,7 @@ export function useRemoteChat({
 					selectedSession?.sessionPath ??
 					(identifiedDraftSessionId ? agentState?.sessionFile : undefined),
 				noSession: draftTemporary,
+				agent,
 			})
 			.catch((error: unknown) => {
 				if (
@@ -680,7 +713,7 @@ export function useRemoteChat({
 		// Carry the draft run-config onto the freshly started session, matching the
 		// Desktop `prepareRuntimeConfiguration` step for new chats. Selected sessions
 		// keep whatever model Pi already restored.
-		if (!selectedSession && draftModel) {
+		if (!selectedSession && draftModel && (!droid || draftModel.id)) {
 			await targetRpc<PiModel>({
 				type: "set_model",
 				provider: draftModel.provider,
@@ -705,8 +738,10 @@ export function useRemoteChat({
 	}, [
 		activeProjectId,
 		activeSessionKey,
+		agent,
 		agentState,
 		client,
+		droid,
 		draftModel,
 		draftThinkingLevel,
 		draftTemporary,
@@ -778,11 +813,18 @@ export function useRemoteChat({
 	});
 
 	const composerThinkingLevelsForModel = selectedSession
-		? thinkingLevels
+		? droid
+			? (agentState?.model?.thinkingLevels ?? thinkingLevels)
+			: thinkingLevels
 		: (draftModel?.thinkingLevels ?? []);
 	const composerSelectedThinkingLevel = selectedSession
 		? (agentState?.thinkingLevel ?? historyThinkingLevel)
 		: draftThinkingLevel;
+	const visibleComposerSuggestions = useMemo(
+		() =>
+			droid ? omitSlashSuggestions(composerSuggestions) : composerSuggestions,
+		[composerSuggestions, droid],
+	);
 
 	const { tryHandleComposerCommand } = useRemoteChatCommands({
 		client,
@@ -796,6 +838,7 @@ export function useRemoteChat({
 		rpcForSession,
 		startDraft,
 		setFatalError,
+		piCommands: !droid,
 	});
 
 	const {
@@ -819,6 +862,7 @@ export function useRemoteChat({
 		readOnly,
 		hasSelectedSession: Boolean(selectedSession),
 		hasIdentifiedSession,
+		droid,
 		autoTitleRequestedRef,
 		pendingProjectMcpPromptsRef,
 		projectMcpApprovalRequestedRef,
@@ -945,11 +989,14 @@ export function useRemoteChat({
 		showSwitchSkeleton,
 		requestHistoryRange,
 		// composer / config
+		agent,
+		selectDraftAgent,
+		droid,
 		composer,
 		images,
 		setImages,
 		handleComposerChange,
-		composerSuggestions,
+		composerSuggestions: visibleComposerSuggestions,
 		handleSuggestionTrigger,
 		selectedModel,
 		composerThinkingLevels: composerThinkingLevelsForModel,

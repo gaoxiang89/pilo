@@ -59,6 +59,14 @@ Pilo 当前以源码构建为主。开发需要 Node.js 22、pnpm（CI 使用 10
 
 Pilo 默认从 `PATH` 自动发现 `pi`。也可以在 Settings 中为每个 Connection 单独指定 Pi 可执行文件路径。
 
+## Factory Droid
+
+新建会话可以选择 [Factory Droid](https://docs.factory.ai/) 而不是 Pi。连接记住默认代理，会话保持创建时的选择。
+
+Droid 跟 Pi 走同一套 Local、WSL、SSH 服务，跑在项目所在的环境里。需要先在那个环境安装并登录 `droid`（或设置 `FACTORY_API_KEY`）。Pilo 不保存这把密钥。会话历史读取 `~/.factory/sessions`，SQLite 只做索引。
+
+这一版只做对话闭环：回复和工具调用，使用 Droid 自己的默认模型，自主级别固定为 medium。Pi 扩展、斜杠命令、模型选择和权限确认仍只属于 Pi 会话。
+
 ### Windows
 
 ```powershell

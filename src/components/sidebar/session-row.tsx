@@ -408,6 +408,11 @@ export const SessionRow = memo(function SessionRow({
 									>
 										{session.title}
 									</span>
+									{session.agent === "droid" ? (
+										<span className="ml-1 shrink-0 text-2xs text-sidebar-foreground-muted">
+											{t("connection.defaultAgentDroid")}
+										</span>
+									) : null}
 								</div>
 							)}
 							{projectContext && projectName ? (

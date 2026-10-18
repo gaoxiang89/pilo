@@ -12,8 +12,8 @@ mod remote;
 mod session;
 
 pub use connection::{
-    Connection, ConnectionKind, ConnectionNamingModel, PiRuntime, SshAuthMethod, SshTarget,
-    WslDistribution,
+    AgentKind, Connection, ConnectionKind, ConnectionNamingModel, PiRuntime, SshAuthMethod,
+    SshTarget, WslDistribution,
 };
 pub use project::{
     DiscoveredProject, Project, ProjectMetadata, ProjectModelCache, ProjectModelScope,
