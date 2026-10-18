@@ -36,7 +36,7 @@
 		"category": "DeveloperTool",
 		"shortDescription": "A simple desktop client for Pi Coding Agent",
 		"longDescription": "A simple desktop client for Pi Coding Agent that brings Local, WSL, and SSH projects into one workspace while keeping Pi in the environment where the code lives.",
-		"homepage": "https://github.com/hsingjui/pilo",
+		"homepage": "https://github.com/gaoxiang89/pilo",
 		"linux": {
 			"deb": {
 				"desktopTemplate": "linux/pilo.desktop"
@@ -60,9 +60,9 @@
 	},
 	"plugins": {
 		"updater": {
-			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY0QTRGQjk4NDA5Q0Q5QTMKUldTajJaeEFtUHVrOU9XVDFzSXNuNzRLTE4rWDNPRVg1RkJJV2tFWnBGQy8yd0tEbUNFVGI4MjgK",
+			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI5MjJBRjdFNkY5MDA2RUIKUldUckJwQnZmcThpS1lxUGoybTE2VHBHZU8yM1JpdE5wSlN6aVh3VVhOcFhIakdpQTBWUWpwb3oK",
 			"endpoints": [
-				"https://github.com/hsingjui/pilo/releases/latest/download/latest.json"
+				"https://github.com/gaoxiang89/pilo/releases/latest/download/latest.json"
 			],
 			"windows": {
 				"installMode": "passive"

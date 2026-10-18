@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/hsingjui/pilo/actions/workflows/ci.yml"><img src="https://github.com/hsingjui/pilo/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+  <a href="https://github.com/gaoxiang89/pilo/actions/workflows/ci.yml"><img src="https://github.com/gaoxiang89/pilo/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
   <img src="https://img.shields.io/badge/Desktop-Windows%20x64%20%7C%20macOS%20arm64-4B5563?style=flat-square" alt="Desktop releases: Windows x64 and macOS arm64">
   <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-2024-3776AB?style=flat-square" alt="Rust 2024 edition"></a>
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Tauri-2-3776AB?style=flat-square" alt="Tauri 2"></a>
@@ -19,6 +19,8 @@
 </p>
 
 Pilo is a desktop client for [Pi Coding Agent](https://pi.dev/), not a separate agent implementation. It presents connections, projects, and Pi sessions in an IDE-style workspace while leaving conversation state and agent behavior to Pi.
+
+> This repository is a fork of [hsingjui/pilo](https://github.com/hsingjui/pilo). Many thanks to the original author [@hsingjui](https://github.com/hsingjui) for creating Pilo.
 
 ## Highlights
 

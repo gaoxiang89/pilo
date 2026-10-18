@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/hsingjui/pilo/actions/workflows/ci.yml"><img src="https://github.com/hsingjui/pilo/actions/workflows/ci.yml/badge.svg" alt="CI 状态"></a>
+  <a href="https://github.com/gaoxiang89/pilo/actions/workflows/ci.yml"><img src="https://github.com/gaoxiang89/pilo/actions/workflows/ci.yml/badge.svg" alt="CI 状态"></a>
   <img src="https://img.shields.io/badge/Desktop-Windows%20x64%20%7C%20macOS%20arm64-4B5563?style=flat-square" alt="桌面发行平台：Windows x64 与 macOS arm64">
   <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-2024-3776AB?style=flat-square" alt="Rust 2024 edition"></a>
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Tauri-2-3776AB?style=flat-square" alt="Tauri 2"></a>
@@ -19,6 +19,8 @@
 </p>
 
 Pilo 是 [Pi Coding Agent](https://pi.dev/) 的桌面客户端，不重新实现 Agent。它负责在统一工作区中呈现 Connection、Project 与 Pi Session，而会话状态和 Agent 行为仍由 Pi 负责。
+
+> 本仓库 fork 自 [hsingjui/pilo](https://github.com/hsingjui/pilo)。感谢原作者 [@hsingjui](https://github.com/hsingjui) 创建了 Pilo。
 
 ## 核心能力
 

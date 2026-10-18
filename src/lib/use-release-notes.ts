@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
-export const REPOSITORY_URL = "https://github.com/hsingjui/pilo";
+export const REPOSITORY_URL = "https://github.com/gaoxiang89/pilo";
 export const RELEASES_URL = `${REPOSITORY_URL}/releases`;
 
 export function useReleaseNotes(
@@ -35,7 +35,7 @@ export function useReleaseNotes(
 		const timeout = window.setTimeout(() => controller.abort(), 15_000);
 
 		void fetch(
-			`https://api.github.com/repos/hsingjui/pilo/releases/tags/${encodeURIComponent(tag)}`,
+			`https://api.github.com/repos/gaoxiang89/pilo/releases/tags/${encodeURIComponent(tag)}`,
 			{
 				headers: { Accept: "application/vnd.github+json" },
 				signal: controller.signal,
