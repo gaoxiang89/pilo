@@ -20,6 +20,9 @@
 
 Pilo is a desktop client for [Pi Coding Agent](https://pi.dev/), not a separate agent implementation. It presents connections, projects, and Pi sessions in an IDE-style workspace while leaving conversation state and agent behavior to Pi.
 
+> [!IMPORTANT]
+> This build is for personal use. To use Pilo, please use the official version: [hsingjui/pilo](https://github.com/hsingjui/pilo).
+>
 > This repository is a fork of [hsingjui/pilo](https://github.com/hsingjui/pilo). Many thanks to the original author [@hsingjui](https://github.com/hsingjui) for creating Pilo.
 
 ## Highlights

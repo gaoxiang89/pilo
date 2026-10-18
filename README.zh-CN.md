@@ -20,6 +20,9 @@
 
 Pilo 是 [Pi Coding Agent](https://pi.dev/) 的桌面客户端，不重新实现 Agent。它负责在统一工作区中呈现 Connection、Project 与 Pi Session，而会话状态和 Agent 行为仍由 Pi 负责。
 
+> [!IMPORTANT]
+> 这个版本是个人用的，使用 Pilo 请用官方原版本：[hsingjui/pilo](https://github.com/hsingjui/pilo)。
+>
 > 本仓库 fork 自 [hsingjui/pilo](https://github.com/hsingjui/pilo)。感谢原作者 [@hsingjui](https://github.com/hsingjui) 创建了 Pilo。
 
 ## 核心能力
